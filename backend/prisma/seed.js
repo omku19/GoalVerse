@@ -86,12 +86,12 @@ async function main() {
   ];
 
   const goalTemplates = [
-    ["Close enterprise pipeline", "Move high-value opportunities through the quarter.", 120, "deals", "HIGH", "ACTIVE", "APPROVED", 80],
-    ["Improve onboarding quality", "Reduce setup friction with repeatable playbooks.", 100, "percent", "MEDIUM", "AT_RISK", "APPROVED", 45],
-    ["Launch self-serve insights", "Ship dashboard improvements for leadership visibility.", 8, "features", "HIGH", "ACTIVE", "APPROVED", 5],
-    ["Stabilize API performance", "Reduce high-latency goal workflow calls.", 95, "percent", "MEDIUM", "COMPLETED", "APPROVED", 95],
-    ["Refresh quarterly success plans", "Create measurable plans for top accounts.", 30, "accounts", "LOW", "DRAFT", "PENDING", 0],
-    ["Document implementation runbooks", "Publish reusable deployment and support guides.", 12, "docs", "MEDIUM", "SUBMITTED", "APPROVED", 10],
+    ["Close enterprise pipeline", "Move high-value opportunities through the quarter.", 120, "MIN", "HIGH", "ACTIVE", "APPROVED", 80],
+    ["Reduce onboarding cycle time", "Lower implementation turnaround time without losing quality.", 14, "MAX", "MEDIUM", "AT_RISK", "APPROVED", 18],
+    ["Launch self-serve insights", "Ship dashboard improvements before the release deadline.", 0, "TIMELINE", "HIGH", "ACTIVE", "APPROVED", 0],
+    ["Zero critical API incidents", "Keep critical production incidents at zero this quarter.", 0, "ZERO", "MEDIUM", "COMPLETED", "APPROVED", 0],
+    ["Refresh quarterly success plans", "Create measurable plans for top accounts.", 30, "MIN", "LOW", "DRAFT", "PENDING", 0],
+    ["Document implementation runbooks", "Publish reusable deployment and support guides.", 12, "MIN", "MEDIUM", "SUBMITTED", "APPROVED", 10],
   ];
 
   for (let index = 0; index < employees.length; index += 1) {

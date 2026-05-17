@@ -1,4 +1,5 @@
 import { Outlet, useNavigate } from "react-router-dom";
+import Footer from "../components/Footer.jsx";
 import Header from "../components/Header.jsx";
 import Sidebar from "../components/Sidebar.jsx";
 import { useAuth } from "../hooks/useAuth.js";
@@ -20,6 +21,7 @@ export default function AppLayout() {
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <Outlet />
         </main>
+        <Footer />
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ const roles = {
   manager: "MANAGER",
   employee: "EMPLOYEE",
 };
+const unitTypes = ["MIN", "MAX", "TIMELINE", "ZERO"];
 
 const asyncHandler = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
@@ -67,6 +68,47 @@ function goalInclude() {
   };
 }
 
+function calculateGoalScore(goal) {
+  const unit = String(goal.unit || "").toUpperCase();
+  const achievement = Number(goal.progress || 0);
+  const target = Number(goal.targetValue || 0);
+
+  if (unit === "MAX") {
+    if (achievement <= 0) return { ratio: target > 0 ? 1 : 0, percent: target > 0 ? 100 : 0 };
+    const ratio = target / achievement;
+    return { ratio, percent: Math.round(ratio * 100) };
+  }
+
+  if (unit === "TIMELINE") {
+    const isComplete = goal.status === "COMPLETED" || goal.status === "SUBMITTED";
+    const completedAt = goal.updatedAt ? new Date(goal.updatedAt) : null;
+    const deadline = goal.dueDate ? new Date(goal.dueDate) : null;
+    const onTime = Boolean(isComplete && deadline && completedAt && completedAt <= deadline);
+    return { ratio: onTime ? 1 : 0, percent: onTime ? 100 : 0 };
+  }
+
+  if (unit === "ZERO") {
+    const ratio = achievement === 0 ? 1 : 0;
+    return { ratio, percent: ratio * 100 };
+  }
+
+  const ratio = target > 0 ? achievement / target : 0;
+  return { ratio, percent: Math.round(ratio * 100) };
+}
+
+function decorateGoal(goal) {
+  if (!goal) return goal;
+  return {
+    ...goal,
+    unit: String(goal.unit || "").toUpperCase(),
+    score: calculateGoalScore(goal),
+  };
+}
+
+function decorateGoals(goals) {
+  return goals.map(decorateGoal);
+}
+
 async function getUser(userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || !user.isActive) throw forbidden("Inactive or missing user");
@@ -110,11 +152,30 @@ const userSchema = z.object({
 const goalSchema = z.object({
   title: z.string().trim().min(3).max(180),
   description: z.string().max(1000).optional().nullable(),
-  targetValue: z.coerce.number().positive(),
-  unit: z.string().trim().min(1).max(40),
+  targetValue: z.coerce.number().min(0).optional(),
+  unit: z.enum(unitTypes),
   quarter: z.coerce.number().int().min(1).max(4),
   year: z.coerce.number().int().min(2024).max(2035),
+  dueDate: z.string().optional().nullable(),
 });
+
+function normalizeGoalPayload(payload) {
+  const unit = String(payload.unit || "").toUpperCase();
+  if (["MIN", "MAX"].includes(unit) && (!payload.targetValue || Number(payload.targetValue) <= 0)) {
+    throw badRequest("Target value is required for Min and Max unit types");
+  }
+
+  if (unit === "TIMELINE" && !payload.dueDate) {
+    throw badRequest("Deadline is required for Timeline goals");
+  }
+
+  return {
+    ...payload,
+    unit,
+    targetValue: ["TIMELINE", "ZERO"].includes(unit) ? 0 : Number(payload.targetValue),
+    dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
+  };
+}
 
 router.use(authenticate);
 
@@ -229,11 +290,11 @@ router.get("/users/:id/goals", authorizeRoles([roles.hr, roles.manager]), asyncH
   const where = { ownerId: req.params.id, ...parseQuarterYear(req.query) };
   const goals = await prisma.goal.findMany({ where, include: goalInclude(), orderBy: { createdAt: "desc" } });
   if (goals[0]) await ensureGoalAccess(req, goals[0]);
-  res.json({ data: goals });
+  res.json({ data: decorateGoals(goals) });
 }));
 
 router.post("/goals", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
-  const payload = goalSchema.parse(req.body);
+  const payload = normalizeGoalPayload(goalSchema.parse(req.body));
   const user = await getUser(req.user.id);
   if (!user.managerId) throw badRequest("You need an assigned manager before creating goals");
   const goal = await prisma.goal.create({
@@ -250,7 +311,7 @@ router.post("/goals", authorizeRoles([roles.employee]), asyncHandler(async (req,
   });
   await writeLog({ actorId: user.id, goalId: goal.id, departmentId: goal.departmentId, action: "goal.created", entityType: "goal", entityId: goal.id, summary: goal.title });
   await notify({ recipientId: user.managerId, actorId: user.id, goalId: goal.id, type: "goal_pending", title: "New goal pending approval", message: `${user.firstName} submitted ${goal.title}` });
-  res.status(201).json({ data: goal });
+  res.status(201).json({ data: decorateGoal(goal) });
 }));
 
 router.get("/goals", asyncHandler(async (req, res) => {
@@ -264,18 +325,18 @@ router.get("/goals", asyncHandler(async (req, res) => {
     where.ownerId = { in: reports.map((report) => report.id) };
   }
   const goals = await prisma.goal.findMany({ where, include: goalInclude(), orderBy: { updatedAt: "desc" } });
-  res.json({ data: goals });
+  res.json({ data: decorateGoals(goals) });
 }));
 
 router.get("/goals/:id", asyncHandler(async (req, res) => {
   const goal = await prisma.goal.findUnique({ where: { id: req.params.id }, include: goalInclude() });
   if (!goal) throw notFound("Goal not found");
   await ensureGoalAccess(req, goal);
-  res.json({ data: goal });
+  res.json({ data: decorateGoal(goal) });
 }));
 
 router.put("/goals/:id", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
-  const payload = goalSchema.partial().parse(req.body);
+  const payload = normalizeGoalPayload(goalSchema.parse(req.body));
   const existing = await prisma.goal.findUnique({ where: { id: req.params.id } });
   if (!existing) throw notFound("Goal not found");
   if (existing.ownerId !== req.user.id) throw forbidden();
@@ -285,7 +346,7 @@ router.put("/goals/:id", authorizeRoles([roles.employee]), asyncHandler(async (r
     data: { ...payload, approvalStatus: "PENDING", managerComment: null },
     include: goalInclude(),
   });
-  res.json({ data: goal });
+  res.json({ data: decorateGoal(goal) });
 }));
 
 router.delete("/goals/:id", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
@@ -298,20 +359,35 @@ router.delete("/goals/:id", authorizeRoles([roles.employee]), asyncHandler(async
 }));
 
 router.patch("/goals/:id/approve", authorizeRoles([roles.manager]), asyncHandler(async (req, res) => {
-  const schema = z.object({ priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]), dueDate: z.string().min(1), managerComment: z.string().optional() });
+  const schema = goalSchema.extend({ priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]), dueDate: z.string().min(1), managerComment: z.string().optional() });
   const payload = schema.parse(req.body);
   const existing = await prisma.goal.findUnique({ where: { id: req.params.id }, include: { owner: true } });
   if (!existing) throw notFound("Goal not found");
   if (existing.owner.managerId !== req.user.id) throw forbidden("Only the assigned manager can approve this goal");
   if (existing.approvalStatus !== "PENDING") throw badRequest("Goal is not pending approval");
+  const goalData = normalizeGoalPayload(payload);
   const goal = await prisma.goal.update({
     where: { id: req.params.id },
-    data: { approvalStatus: "APPROVED", status: "ACTIVE", priority: payload.priority, dueDate: new Date(payload.dueDate), managerComment: payload.managerComment, approvedById: req.user.id, approvedAt: new Date() },
+    data: {
+      title: goalData.title,
+      description: goalData.description,
+      targetValue: goalData.targetValue,
+      unit: goalData.unit,
+      quarter: goalData.quarter,
+      year: goalData.year,
+      approvalStatus: "APPROVED",
+      status: "ACTIVE",
+      priority: payload.priority,
+      dueDate: goalData.dueDate,
+      managerComment: payload.managerComment,
+      approvedById: req.user.id,
+      approvedAt: new Date(),
+    },
     include: goalInclude(),
   });
   await writeLog({ actorId: req.user.id, goalId: goal.id, departmentId: goal.departmentId, action: "goal.approved", entityType: "goal", entityId: goal.id, summary: goal.title });
   await notify({ recipientId: goal.ownerId, actorId: req.user.id, goalId: goal.id, type: "goal_approved", title: "Goal approved", message: `${goal.title} is now active` });
-  res.json({ data: goal });
+  res.json({ data: decorateGoal(goal) });
 }));
 
 router.patch("/goals/:id/reject", authorizeRoles([roles.manager]), asyncHandler(async (req, res) => {
@@ -325,7 +401,7 @@ router.patch("/goals/:id/reject", authorizeRoles([roles.manager]), asyncHandler(
     include: goalInclude(),
   });
   await notify({ recipientId: goal.ownerId, actorId: req.user.id, goalId: goal.id, type: "goal_rejected", title: "Goal needs revision", message: payload.managerComment });
-  res.json({ data: goal });
+  res.json({ data: decorateGoal(goal) });
 }));
 
 router.patch("/goals/:id/progress", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
@@ -338,15 +414,19 @@ router.patch("/goals/:id/progress", authorizeRoles([roles.employee]), asyncHandl
   if (!existing) throw notFound("Goal not found");
   if (existing.ownerId !== req.user.id) throw forbidden();
   if (!["ACTIVE", "PAUSED", "AT_RISK", "COMPLETED"].includes(existing.status)) throw badRequest("Only approved active goals can be updated");
-  if (payload.progress > existing.targetValue) throw badRequest("Progress cannot exceed target value");
-  const status = payload.progress >= existing.targetValue ? "COMPLETED" : payload.status;
+  const existingUnit = String(existing.unit || "").toUpperCase();
+  if (existingUnit === "MIN" && payload.progress > existing.targetValue) throw badRequest("Progress cannot exceed target value for Min goals");
+  if (existingUnit === "TIMELINE" && payload.status !== "COMPLETED") {
+    throw badRequest("Timeline goals are measured by completion against the deadline");
+  }
+  const status = existingUnit === "MIN" && payload.progress >= existing.targetValue ? "COMPLETED" : payload.status;
   const goal = await prisma.goal.update({
     where: { id: req.params.id },
     data: { progress: Math.round(payload.progress), status, employeeNote: payload.employeeNote },
     include: goalInclude(),
   });
   await writeLog({ actorId: req.user.id, goalId: goal.id, departmentId: goal.departmentId, action: "goal.progress_updated", entityType: "goal", entityId: goal.id, summary: payload.employeeNote || "Progress updated", metadata: { oldProgress: existing.progress, newProgress: goal.progress } });
-  res.json({ data: goal });
+  res.json({ data: decorateGoal(goal) });
 }));
 
 router.patch("/goals/:id/complete", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
@@ -354,7 +434,7 @@ router.patch("/goals/:id/complete", authorizeRoles([roles.employee]), asyncHandl
   if (!existing) throw notFound("Goal not found");
   if (existing.ownerId !== req.user.id) throw forbidden();
   const goal = await prisma.goal.update({ where: { id: req.params.id }, data: { progress: Math.round(existing.targetValue), status: "COMPLETED" }, include: goalInclude() });
-  res.json({ data: goal });
+  res.json({ data: decorateGoal(goal) });
 }));
 
 router.post("/checkins", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
@@ -457,7 +537,7 @@ router.get("/dashboard/hr", authorizeRoles([roles.hr]), asyncHandler(async (req,
 
 router.get("/analytics/completion-rate", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
   const goals = await prisma.goal.findMany({ where: parseQuarterYear(req.query) });
-  const completed = goals.filter((goal) => goal.status === "COMPLETED" || goal.progress >= goal.targetValue).length;
+  const completed = goals.filter((goal) => calculateGoalScore(goal).percent >= 100).length;
   res.json({ data: { total: goals.length, completed, rate: goals.length ? Math.round((completed / goals.length) * 100) : 0 } });
 }));
 
@@ -480,7 +560,7 @@ function buildDashboard(goals, extras = {}) {
   const submitted = goals.filter((goal) => goal.status === "SUBMITTED").length;
   return {
     stats: { total, completed, pending, active, delayed, submitted },
-    goals,
+    goals: decorateGoals(goals),
     ...extras,
   };
 }

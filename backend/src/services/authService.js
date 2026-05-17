@@ -9,7 +9,7 @@ function invalidCredentialsError() {
   return error;
 }
 
-function sanitizeUser(user) {
+export function sanitizeUser(user) {
   return {
     id: user.id,
     firstName: user.firstName,
@@ -19,6 +19,12 @@ function sanitizeUser(user) {
     departmentId: user.departmentId,
     isActive: user.isActive,
   };
+}
+
+function unauthorizedError() {
+  const error = new Error("Unauthorized");
+  error.code = "UNAUTHORIZED";
+  return error;
 }
 
 export async function loginUser(payload) {
@@ -59,4 +65,20 @@ export async function loginUser(payload) {
     token,
     user: safeUser,
   };
+}
+
+export async function getCurrentUserProfile(authUser) {
+  if (!authUser?.id) {
+    throw unauthorizedError();
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: authUser.id },
+  });
+
+  if (!user || !user.isActive) {
+    throw unauthorizedError();
+  }
+
+  return sanitizeUser(user);
 }

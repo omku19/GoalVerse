@@ -1,4 +1,4 @@
-import { loginUser } from "../services/authService.js";
+import { getCurrentUserProfile, loginUser } from "../services/authService.js";
 
 export async function login(req, res, next) {
   try {
@@ -23,4 +23,22 @@ export async function logout(_req, res) {
   res.status(200).json({
     message: "Logout successful",
   });
+}
+
+export async function me(req, res, next) {
+  try {
+    const user = await getCurrentUserProfile(req.user);
+
+    return res.status(200).json({
+      user,
+    });
+  } catch (error) {
+    if (error.code === "UNAUTHORIZED") {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
+    }
+
+    return next(error);
+  }
 }

@@ -85,3 +85,34 @@ Authorization: Bearer <token>
 ```
 
 Sprint 1 uses stateless JWT logout. The backend returns a success response, and the frontend removes the token and user from local auth state. A future refresh-token implementation can add a persisted refresh-token table and revoke refresh tokens server-side while keeping this route.
+
+Current user endpoint:
+
+```http
+GET /api/auth/me
+Authorization: Bearer <token>
+```
+
+Sample response:
+
+```json
+{
+  "user": {
+    "id": "user-id",
+    "firstName": "HR",
+    "lastName": "Admin",
+    "email": "omkute6789@gmail.com",
+    "role": "HR_ADMIN",
+    "departmentId": null,
+    "isActive": true
+  }
+}
+```
+
+Frontend login page:
+
+```text
+/login
+```
+
+The login page validates email/password, displays API errors, shows a loading state, stores the JWT and sanitized user profile on success, and redirects to `/`.

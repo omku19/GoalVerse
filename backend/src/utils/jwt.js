@@ -10,3 +10,11 @@ export function signToken(payload) {
     expiresIn: env.jwtExpiresIn,
   });
 }
+
+export function verifyToken(token) {
+  if (!env.jwtSecret) {
+    throw new Error("JWT_SECRET is required");
+  }
+
+  return jwt.verify(token, env.jwtSecret);
+}

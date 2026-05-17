@@ -15,7 +15,12 @@ export function getAuthToken() {
 export function getAuthUser() {
   const user = localStorage.getItem(AUTH_USER_KEY);
 
-  return user ? JSON.parse(user) : null;
+  try {
+    return user ? JSON.parse(user) : null;
+  } catch (_error) {
+    clearAuthSession();
+    return null;
+  }
 }
 
 export function clearAuthSession() {
@@ -50,6 +55,33 @@ export async function loginUser(credentials) {
 
   saveAuthSession(data);
   return data;
+}
+
+export async function fetchCurrentUser() {
+  const token = getAuthToken();
+
+  if (!token) {
+    throw new Error("Authentication required");
+  }
+
+  const response = await fetch(`${API_URL}/auth/me`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    clearAuthSession();
+    throw new Error(data.message || "Authentication required");
+  }
+
+  if (data.user) {
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(data.user));
+  }
+
+  return data.user;
 }
 
 export async function logoutUser() {

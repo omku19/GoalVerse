@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -8,6 +7,7 @@ datasource db {
 }
 
 enum Role {
+  HR_ADMIN @map("hr_admin")
   ADMIN    @map("admin")
   MANAGER  @map("manager")
   EMPLOYEE @map("employee")
@@ -18,8 +18,10 @@ enum Role {
 enum GoalStatus {
   DRAFT      @map("draft")
   ACTIVE     @map("active")
+  PAUSED     @map("paused")
   AT_RISK    @map("at_risk")
   COMPLETED  @map("completed")
+  SUBMITTED  @map("submitted")
   ARCHIVED   @map("archived")
 
   @@map("goal_status")
@@ -107,10 +109,14 @@ model Goal {
   parentGoalId   String?        @map("parent_goal_id") @db.Uuid
   title          String         @db.VarChar(180)
   description    String?        @db.Text
+  targetValue    Float          @default(100) @map("target_value")
+  unit           String         @default("units") @db.VarChar(40)
   status         GoalStatus     @default(DRAFT)
   approvalStatus ApprovalStatus @default(PENDING) @map("approval_status")
   priority       Priority       @default(MEDIUM)
   progress       Int            @default(0)
+  employeeNote   String?        @map("employee_note") @db.Text
+  managerComment String?        @map("manager_comment") @db.Text
   startDate      DateTime?      @map("start_date") @db.Date
   dueDate        DateTime?      @map("due_date") @db.Date
   quarter        Int?
@@ -151,6 +157,8 @@ model QuarterlyCheckin {
   quarter       Int
   year          Int
   progress      Int       @default(0)
+  status        String    @default("submitted") @db.VarChar(40)
+  submissionStatus String @default("submitted") @map("submission_status") @db.VarChar(40)
   wins          String?   @db.Text
   blockers      String?   @db.Text
   nextSteps     String?   @map("next_steps") @db.Text

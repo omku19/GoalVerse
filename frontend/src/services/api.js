@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 
 const AUTH_TOKEN_KEY = "goalverse_auth_token";
 const AUTH_USER_KEY = "goalverse_auth_user";
@@ -91,10 +91,36 @@ export async function logoutUser() {
     await fetch(`${API_URL}/auth/logout`, {
       method: "POST",
       headers: {
+        "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
   } finally {
     clearAuthSession();
   }
+}
+
+export async function apiRequest(path, options = {}) {
+  const token = getAuthToken();
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+    body: options.body && typeof options.body !== "string" ? JSON.stringify(options.body) : options.body,
+  });
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.message || "Request failed");
+  }
+
+  return data.data ?? data;
 }

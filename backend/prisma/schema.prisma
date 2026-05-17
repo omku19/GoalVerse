@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN    @map("admin")
+  MANAGER  @map("manager")
+  EMPLOYEE @map("employee")
+
+  @@map("role")
+}
+
+enum GoalStatus {
+  DRAFT      @map("draft")
+  ACTIVE     @map("active")
+  AT_RISK    @map("at_risk")
+  COMPLETED  @map("completed")
+  ARCHIVED   @map("archived")
+
+  @@map("goal_status")
+}
+
+enum ApprovalStatus {
+  PENDING  @map("pending")
+  APPROVED @map("approved")
+  REJECTED @map("rejected")
+
+  @@map("approval_status")
+}
+
+enum Priority {
+  LOW      @map("low")
+  MEDIUM   @map("medium")
+  HIGH     @map("high")
+  CRITICAL @map("critical")
+
+  @@map("priority")
+}
+
+model Department {
+  id                 String       @id @default(uuid()) @db.Uuid
+  name               String       @db.VarChar(120)
+  slug               String       @unique @db.VarChar(140)
+  description        String?      @db.Text
+  parentDepartmentId String?      @map("parent_department_id") @db.Uuid
+  isActive           Boolean      @default(true) @map("is_active")
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parentDepartment Department?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull)
+  childDepartments  Department[] @relation("DepartmentHierarchy")
+  users             User[]
+  goals             Goal[]
+  activityLogs      ActivityLog[]
+
+  @@index([parentDepartmentId])
+  @@index([isActive])
+  @@map("departments")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  departmentId String?   @map("department_id") @db.Uuid
+  managerId    String?   @map("manager_id") @db.Uuid
+  firstName    String    @map("first_name") @db.VarChar(80)
+  lastName     String    @map("last_name") @db.VarChar(80)
+  email        String    @unique @db.VarChar(255)
+  passwordHash String?   @map("password_hash") @db.VarChar(255)
+  role         Role      @default(EMPLOYEE)
+  jobTitle     String?   @map("job_title") @db.VarChar(120)
+  avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  department               Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  manager                  User?              @relation("UserManagement", fields: [managerId], references: [id], onDelete: SetNull)
+  directReports            User[]             @relation("UserManagement")
+  goalsOwned               Goal[]             @relation("GoalOwner")
+  goalsCreated             Goal[]             @relation("GoalCreator")
+  goalsApproved            Goal[]             @relation("GoalApprover")
+  checkinsSubmitted        QuarterlyCheckin[] @relation("CheckinSubmitter")
+  checkinsReviewed         QuarterlyCheckin[] @relation("CheckinReviewer")
+  activityLogs             ActivityLog[]      @relation("ActivityActor")
+  notificationsReceived    Notification[]     @relation("NotificationRecipient")
+  notificationsTriggered   Notification[]     @relation("NotificationActor")
+
+  @@index([departmentId])
+  @@index([managerId])
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+model Goal {
+  id             String         @id @default(uuid()) @db.Uuid
+  ownerId        String         @map("owner_id") @db.Uuid
+  createdById    String         @map("created_by_id") @db.Uuid
+  approvedById   String?        @map("approved_by_id") @db.Uuid
+  departmentId   String?        @map("department_id") @db.Uuid
+  parentGoalId   String?        @map("parent_goal_id") @db.Uuid
+  title          String         @db.VarChar(180)
+  description    String?        @db.Text
+  status         GoalStatus     @default(DRAFT)
+  approvalStatus ApprovalStatus @default(PENDING) @map("approval_status")
+  priority       Priority       @default(MEDIUM)
+  progress       Int            @default(0)
+  startDate      DateTime?      @map("start_date") @db.Date
+  dueDate        DateTime?      @map("due_date") @db.Date
+  quarter        Int?
+  year           Int?
+  approvedAt     DateTime?      @map("approved_at") @db.Timestamptz(6)
+  archivedAt     DateTime?      @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  owner             User               @relation("GoalOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdBy         User               @relation("GoalCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy        User?              @relation("GoalApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  department        Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  parentGoal        Goal?              @relation("GoalHierarchy", fields: [parentGoalId], references: [id], onDelete: SetNull)
+  childGoals        Goal[]             @relation("GoalHierarchy")
+  quarterlyCheckins QuarterlyCheckin[]
+  activityLogs      ActivityLog[]
+  notifications     Notification[]
+
+  @@index([ownerId])
+  @@index([createdById])
+  @@index([approvedById])
+  @@index([departmentId])
+  @@index([parentGoalId])
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([priority])
+  @@index([dueDate])
+  @@index([year, quarter])
+  @@map("goals")
+}
+
+model QuarterlyCheckin {
+  id            String    @id @default(uuid()) @db.Uuid
+  goalId        String    @map("goal_id") @db.Uuid
+  submittedById String    @map("submitted_by_id") @db.Uuid
+  reviewedById  String?   @map("reviewed_by_id") @db.Uuid
+  quarter       Int
+  year          Int
+  progress      Int       @default(0)
+  wins          String?   @db.Text
+  blockers      String?   @db.Text
+  nextSteps     String?   @map("next_steps") @db.Text
+  reviewerNotes String?   @map("reviewer_notes") @db.Text
+  submittedAt   DateTime? @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt    DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  goal        Goal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  submittedBy User  @relation("CheckinSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  reviewedBy  User? @relation("CheckinReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([goalId, quarter, year])
+  @@index([submittedById])
+  @@index([reviewedById])
+  @@index([year, quarter])
+  @@map("quarterly_checkins")
+}
+
+model ActivityLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  actorId      String?   @map("actor_id") @db.Uuid
+  goalId       String?   @map("goal_id") @db.Uuid
+  departmentId String?   @map("department_id") @db.Uuid
+  action       String    @db.VarChar(120)
+  entityType   String    @map("entity_type") @db.VarChar(80)
+  entityId     String?   @map("entity_id") @db.Uuid
+  summary      String?   @db.VarChar(255)
+  metadata     Json?
+  ipAddress    String?   @map("ip_address") @db.Inet
+  userAgent    String?   @map("user_agent") @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  actor      User?       @relation("ActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+  goal       Goal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([goalId])
+  @@index([departmentId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model Notification {
+  id          String    @id @default(uuid()) @db.Uuid
+  recipientId String    @map("recipient_id") @db.Uuid
+  actorId     String?   @map("actor_id") @db.Uuid
+  goalId      String?   @map("goal_id") @db.Uuid
+  type        String    @db.VarChar(80)
+  title       String    @db.VarChar(160)
+  message     String    @db.Text
+  data        Json?
+  readAt      DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  goal      Goal? @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId])
+  @@index([actorId])
+  @@index([goalId])
+  @@index([readAt])
+  @@index([createdAt])
+  @@map("notifications")
+}

@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { LogIn } from "lucide-react";
-import { loginUser } from "../services/api.js";
+import { useAuth } from "../hooks/useAuth.js";
+import { getDashboardPathByRole } from "../utils/roles.js";
 
 const initialForm = {
   email: "",
@@ -25,10 +27,17 @@ function validateLoginForm(values) {
 }
 
 export default function LoginPage() {
+  const { isAuthenticated, isInitializing, login, user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  if (!isInitializing && isAuthenticated) {
+    return <Navigate to={getDashboardPathByRole(user?.role)} replace />;
+  }
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -58,11 +67,14 @@ export default function LoginPage() {
     setSubmitError("");
 
     try {
-      await loginUser({
+      const session = await login({
         email: form.email.trim(),
         password: form.password,
       });
-      window.location.href = "/";
+      const requestedPath = location.state?.from?.pathname;
+      const destination = requestedPath && requestedPath !== "/login" ? requestedPath : getDashboardPathByRole(session.user.role);
+
+      navigate(destination, { replace: true });
     } catch (error) {
       setSubmitError(error.message || "Unable to sign in");
     } finally {

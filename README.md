@@ -116,3 +116,35 @@ Frontend login page:
 ```
 
 The login page validates email/password, displays API errors, shows a loading state, stores the JWT and sanitized user profile on success, and redirects to `/`.
+
+## Frontend Auth Architecture
+
+Auth state lives in `AuthProvider` and is consumed through `useAuth()`.
+
+Local storage keys:
+
+```text
+goalverse_auth_token
+goalverse_auth_user
+```
+
+Routes:
+
+```text
+/login
+/dashboard/employee
+/dashboard/manager
+/dashboard/hr-admin
+/unauthorized
+/404
+```
+
+Role redirects:
+
+```text
+EMPLOYEE -> /dashboard/employee
+MANAGER -> /dashboard/manager
+HR_ADMIN -> /dashboard/hr-admin
+```
+
+Protected routes redirect unauthenticated users to `/login`. Role mismatches redirect to `/unauthorized`. On refresh, the app reads the stored token and confirms the session through `GET /api/auth/me`.

@@ -36,3 +36,52 @@ cp backend/.env.example backend/.env
 ```
 
 Update `backend/.env` with your PostgreSQL connection string.
+
+## Backend Auth Setup
+
+Required backend environment variables:
+
+```bash
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/goalverse?schema=public"
+JWT_SECRET="replace-with-a-long-random-secret"
+JWT_EXPIRES_IN="1d"
+ADMIN_EMAIL="omkute6789@gmail.com"
+ADMIN_PASSWORD="StrongPassword123"
+```
+
+Run the database migration and seed the default HR admin:
+
+```bash
+cd backend
+npx prisma migrate dev --name sprint_1_auth_seed
+npm run db:seed
+```
+
+Login endpoint:
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "omkute6789@gmail.com",
+  "password": "StrongPassword123"
+}
+```
+
+Successful responses include a JWT token and sanitized user data. Invalid login attempts return:
+
+```json
+{
+  "message": "Invalid credentials"
+}
+```
+
+Logout endpoint:
+
+```http
+POST /api/auth/logout
+Authorization: Bearer <token>
+```
+
+Sprint 1 uses stateless JWT logout. The backend returns a success response, and the frontend removes the token and user from local auth state. A future refresh-token implementation can add a persisted refresh-token table and revoke refresh tokens server-side while keeping this route.

@@ -18,8 +18,7 @@
     "start": "npm run start --workspace backend",
     "prisma:generate": "npm run prisma:generate --workspace backend",
     "prisma:migrate": "npm run prisma:migrate --workspace backend",
-    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --workspace backend",
-    "postinstall": "npm rebuild"
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --workspace backend"
   },
   "workspaces": [
     "frontend",

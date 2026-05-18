@@ -17,12 +17,35 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       ...(devPort ? { port: devPort } : {}),
-      ...(apiProxyTarget ? { proxy: {
-        "/api": {
-          target: apiProxyTarget,
-          changeOrigin: true,
+      ...(apiProxyTarget ? {
+        proxy: {
+          "/api": {
+            target: apiProxyTarget,
+            changeOrigin: true,
+          },
         },
-      } } : {}),
+      } : {}),
+    },
+    build: {
+      outDir: "dist",
+      sourcemap: false,
+      minify: "esbuild",
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("node_modules")) {
+              if (id.includes("react") || id.includes("react-dom") || id.includes("react-router")) {
+                return "vendor-react";
+              }
+              if (id.includes("recharts")) {
+                return "vendor-recharts";
+              }
+              return "vendor";
+            }
+          },
+        },
+      },
     },
   };
 });

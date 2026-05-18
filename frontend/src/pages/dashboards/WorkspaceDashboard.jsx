@@ -44,7 +44,10 @@ function StatCard({ title, value, caption, icon: Icon }) {
 
 function Panel({ title, actions, children, id }) {
   return (
-    <section id={id} className="gv-card gv-panel scroll-mt-24 rounded-xl border border-indigo-100/60 bg-white p-5 shadow-sm">
+    <section
+      id={id}
+      className="gv-card gv-panel min-w-0 overflow-hidden scroll-mt-24 rounded-xl border border-indigo-100/60 bg-white p-5 shadow-sm"
+    >
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
         {actions}
@@ -71,11 +74,11 @@ function Badge({ children, tone = "slate" }) {
 
 function Input({ label, ...props }) {
   return (
-    <label className="grid gap-1 text-sm font-medium text-slate-700">
+    <label className="grid min-w-0 gap-1 text-sm font-medium text-slate-700">
       {label}
       <input
         {...props}
-        className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-[#1E40FF] focus:ring-2 focus:ring-blue-100"
+        className="w-full min-w-0 h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-[#1E40FF] focus:ring-2 focus:ring-blue-100"
       />
     </label>
   );
@@ -83,11 +86,11 @@ function Input({ label, ...props }) {
 
 function Select({ label, children, ...props }) {
   return (
-    <label className="grid gap-1 text-sm font-medium text-slate-700">
+    <label className="grid min-w-0 gap-1 text-sm font-medium text-slate-700">
       {label}
       <select
         {...props}
-        className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-[#1E40FF] focus:ring-2 focus:ring-blue-100"
+        className="w-full min-w-0 h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-[#1E40FF] focus:ring-2 focus:ring-blue-100"
       >
         {children}
       </select>
@@ -97,11 +100,11 @@ function Select({ label, children, ...props }) {
 
 function Textarea({ label, ...props }) {
   return (
-    <label className="grid gap-1 text-sm font-medium text-slate-700">
+    <label className="grid min-w-0 gap-1 text-sm font-medium text-slate-700">
       {label}
       <textarea
         {...props}
-        className="min-h-24 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-[#1E40FF] focus:ring-2 focus:ring-blue-100"
+        className="w-full min-w-0 min-h-24 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-[#1E40FF] focus:ring-2 focus:ring-blue-100"
       />
     </label>
   );
@@ -352,7 +355,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
             setDepartmentName("");
           }}>
             <Input label="Department name" value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} placeholder="Design Operations" required />
-            <div className="pt-6"><Button><Plus size={16} />Add</Button></div>
+            <div className="pt-6 md:col-span-2 xl:col-span-3 flex justify-end"><Button><Plus size={16} />Add</Button></div>
           </form>
         </div>
       </Panel>
@@ -361,7 +364,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
 
       <Panel id="create-user" title="Create User" actions={<Badge tone="green">{users.length} active users</Badge>}>
         <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
-          <form className="grid gap-3 xl:grid-cols-3" onSubmit={(event) => {
+          <form className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" onSubmit={(event) => {
             event.preventDefault();
             runAction(() => apiRequest("/users", { method: "POST", body: userForm }), "User created");
           }}>
@@ -383,7 +386,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
             </Select>
             <Input label="Role title" value={userForm.jobTitle} onChange={(event) => setUserForm({ ...userForm, jobTitle: event.target.value })} />
             <Input label="Password" value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} required />
-            <div className="pt-6"><Button><ShieldCheck size={16} />Create user</Button></div>
+            <div className="pt-6 md:col-span-2 xl:col-span-3 flex justify-end"><Button><ShieldCheck size={16} />Create user</Button></div>
           </form>
         </div>
       </Panel>
@@ -659,7 +662,7 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
         }}>
           <Input label="Goal name" value={goalForm.title} onChange={(event) => setGoalForm({ ...goalForm, title: event.target.value })} required />
           <Input label="Description" value={goalForm.description} onChange={(event) => setGoalForm({ ...goalForm, description: event.target.value })} required />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <Select label="Unit of measurement" value={goalForm.unit} onChange={(event) => setGoalForm({ ...goalForm, unit: event.target.value })}>
               {unitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </Select>

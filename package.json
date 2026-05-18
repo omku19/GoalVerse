@@ -2,6 +2,9 @@
   "name": "goalverse",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "description": "Full-stack monorepo with React, Vite, Tailwind CSS, Express, Prisma, and PostgreSQL.",
   "scripts": {
     "dev": "npm run dev --workspace frontend",

@@ -44,6 +44,15 @@ enum Priority {
   @@map("priority")
 }
 
+enum UnitType {
+  MIN      @map("min")
+  MAX      @map("max")
+  TIMELINE @map("timeline")
+  ZERO     @map("zero")
+
+  @@map("unit_type")
+}
+
 model Department {
   id                 String       @id @default(uuid()) @db.Uuid
   name               String       @db.VarChar(120)
@@ -109,8 +118,8 @@ model Goal {
   parentGoalId   String?        @map("parent_goal_id") @db.Uuid
   title          String         @db.VarChar(180)
   description    String?        @db.Text
-  targetValue    Float          @default(100) @map("target_value")
-  unit           String         @default("units") @db.VarChar(40)
+  targetValue    Float          @default(0) @map("target_value")
+  unit           UnitType       @default(MIN)
   status         GoalStatus     @default(DRAFT)
   approvalStatus ApprovalStatus @default(PENDING) @map("approval_status")
   priority       Priority       @default(MEDIUM)

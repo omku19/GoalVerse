@@ -50,14 +50,38 @@
   --gv-logo-to: #14b8a6;
 
   /* Shadows */
+  --gv-shadow-sm:
+    0 2px 8px rgba(0, 0, 0, 0.05);
+
   --gv-shadow-md:
     0 8px 24px rgba(0, 0, 0, 0.08);
 
   --gv-shadow-lg:
     0 16px 40px rgba(0, 0, 0, 0.10);
 
+  --gv-shadow-xl:
+    0 24px 56px rgba(0, 0, 0, 0.14);
+
   --gv-focus-ring:
     rgba(255, 92, 147, 0.20);
+
+  /* Overlay */
+  --gv-overlay: rgba(0, 0, 0, 0.45);
+
+  /* Text on primary */
+  --gv-text-on-primary: #ffffff;
+
+  /* Semantic surfaces */
+  --gv-success-light: #86efac;
+  --gv-success-surface: rgba(34, 197, 94, 0.08);
+
+  --gv-warning-light: #fcd34d;
+  --gv-warning-surface: rgba(245, 158, 11, 0.08);
+
+  --gv-danger-light: #fca5a5;
+  --gv-danger-surface: rgba(239, 68, 68, 0.08);
+
+  --gv-info-surface: rgba(20, 184, 166, 0.08);
 
 
   font-family:

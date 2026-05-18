@@ -1,4 +1,4 @@
-const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+const API_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 
 const AUTH_TOKEN_KEY = "goalverse_auth_token";
 const AUTH_USER_KEY = "goalverse_auth_user";
@@ -67,7 +67,15 @@ export async function loginUser(credentials) {
     body: JSON.stringify(credentials),
   });
 
-  const data = await response.json();
+  const text = await response.text();
+
+  let data = {};
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_error) {
+    throw new Error("Server returned invalid JSON");
+  }
 
   if (!response.ok) {
     throw new Error(data.message || "Login failed");
@@ -91,7 +99,16 @@ export async function fetchCurrentUser() {
     },
   });
 
-  const data = await response.json();
+  const text = await response.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_parseError) {
+    clearAuthSession();
+    emitAuthExpired();
+    throw new Error("Server returned invalid JSON");
+  }
 
   if (!response.ok) {
     clearAuthSession();

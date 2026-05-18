@@ -103,9 +103,9 @@ export default function Footer() {
 
             {/* Contact info */}
             <div className="space-y-2 text-xs text-[var(--gv-text-inverse)] opacity-70">
-              <p className="flex items-center gap-2"><Mail size={13} /> hello@goalverse.io</p>
-              <p className="flex items-center gap-2"><Phone size={13} /> +1 (555) 123-4567</p>
-              <p className="flex items-center gap-2"><MapPin size={13} /> San Francisco, CA</p>
+              <p className="flex items-center gap-2"><Mail size={13} /> omkute6789@gmail.com</p>
+              <p className="flex items-center gap-2"><Phone size={13} /> +91 8149532772</p>
+              <p className="flex items-center gap-2"><MapPin size={13} /> Pune, Maharashtra</p>
             </div>
           </div>
 

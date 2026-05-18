@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart, Bar, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarChart, Bar, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, CheckCircle2, Clock3, Download, Flag, Plus, Send, ShieldCheck, Unlock, X } from "lucide-react";
 import { apiRequest, downloadReport } from "../../services/api.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -7,7 +7,12 @@ import { useAuth } from "../../hooks/useAuth.js";
 const currentQuarter = Math.floor(new Date().getMonth() / 3) + 1;
 const currentYear = new Date().getFullYear();
 const priorityOptions = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-const goalStatusOptions = ["ACTIVE", "PAUSED", "AT_RISK", "COMPLETED"];
+const goalStatusOptions = [
+  { value: "not_started", label: "Not Started" },
+  { value: "on_track", label: "On Track" },
+  { value: "completed", label: "Completed" },
+];
+const thrustAreaOptions = ["Financial", "Customer", "Process", "People", "Innovation", "Compliance", "Business Impact"];
 const unitOptions = [
   { value: "MIN", label: "Min (Numeric / %)" },
   { value: "MAX", label: "Max (Numeric / %)" },
@@ -204,6 +209,7 @@ function GoalsTable({ goals, onApprove, onReject, onProgress, onSubmitCheckin, o
             <tr key={goal.id} className="gv-table-row align-top">
               <td className="px-3 py-4">
                 <p className="font-semibold text-[var(--gv-text)]">{goal.title}</p>
+                <p className="mt-1 max-w-md text-xs text-[var(--gv-text-muted)]">{goal.thrustArea} · {goal.weightage}% weightage</p>
                 <p className="mt-1 max-w-md text-xs text-[var(--gv-text-muted)]">{goal.description}</p>
                 {goal.managerComment ? <p className="mt-2 text-xs text-[var(--gv-accent)]">Manager: {goal.managerComment}</p> : null}
               </td>
@@ -220,7 +226,7 @@ function GoalsTable({ goals, onApprove, onReject, onProgress, onSubmitCheckin, o
                   <div className="flex flex-wrap gap-2">
                     {onApprove && goal.approvalStatus === "PENDING" ? <Button variant="success" onClick={() => onApprove(goal)}>Approve</Button> : null}
                     {onReject && goal.approvalStatus === "PENDING" ? <Button variant="danger" onClick={() => onReject(goal)}>Reject</Button> : null}
-                    {onProgress && ["ACTIVE", "PAUSED", "AT_RISK"].includes(goal.status) ? <Button variant="secondary" onClick={() => onProgress(goal)}>Update</Button> : null}
+                    {onProgress && !goal.lockedAt && ["ACTIVE", "PAUSED", "AT_RISK"].includes(goal.status) ? <Button variant="secondary" onClick={() => onProgress(goal)}>Update</Button> : null}
                     {onSubmitCheckin && ["ACTIVE", "PAUSED", "AT_RISK", "COMPLETED"].includes(goal.status) ? <Button onClick={() => onSubmitCheckin(goal)}>Submit</Button> : null}
                     {onUnlock && goal.approvalStatus === "APPROVED" ? <Button variant="secondary" onClick={() => onUnlock(goal)}><Unlock size={15} />Unlock</Button> : null}
                     {onAdminEdit && goal.approvalStatus === "APPROVED" ? <Button onClick={() => onAdminEdit(goal)}>Edit</Button> : null}
@@ -243,6 +249,8 @@ export default function WorkspaceDashboard({ role }) {
   const [users, setUsers] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [governance, setGovernance] = useState({ cycles: [], windows: [] });
+  const [hrAnalytics, setHrAnalytics] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -259,10 +267,22 @@ export default function WorkspaceDashboard({ role }) {
       const checkinData = await apiRequest(`/checkins${query}`);
       setCheckins(checkinData);
       if (role === "HR_ADMIN") {
-        const [departmentData, userData, auditData] = await Promise.all([apiRequest("/departments"), apiRequest("/users"), apiRequest("/audit-trail")]);
+        const [departmentData, userData, auditData, cycleData, windowData, qoqData, heatmapData, distributionData, managerEffectivenessData] = await Promise.all([
+          apiRequest("/departments"),
+          apiRequest("/users"),
+          apiRequest("/audit-trail"),
+          apiRequest("/governance/cycles"),
+          apiRequest(`/governance/checkin-windows?cycleYear=${filters.year}`),
+          apiRequest(`/analytics/qoq-achievement?cycleYear=${filters.year}&level=department`),
+          apiRequest(`/analytics/completion-heatmap?cycleYear=${filters.year}`),
+          apiRequest(`/analytics/goal-distribution?cycleYear=${filters.year}`),
+          apiRequest(`/analytics/manager-effectiveness?cycleYear=${filters.year}`),
+        ]);
         setDepartments(departmentData);
         setUsers(userData);
         setAuditLogs(auditData);
+        setGovernance({ cycles: cycleData, windows: windowData });
+        setHrAnalytics({ qoq: qoqData, heatmap: heatmapData, distribution: distributionData, managerEffectiveness: managerEffectivenessData });
       }
     } catch (requestError) {
       setError(requestError.message);
@@ -322,16 +342,19 @@ export default function WorkspaceDashboard({ role }) {
         <StatCard title="Completed" value={stats.completed || 0} caption="Finished goals" icon={CheckCircle2} />
       </div>
 
-      {role === "HR_ADMIN" ? <HrWorkspace departments={departments} users={users} goals={goals} auditLogs={auditLogs} filters={filters} chartData={chartData} runAction={runAction} /> : null}
-      {role === "MANAGER" ? <ManagerWorkspace goals={goals} checkins={checkins} runAction={runAction} /> : null}
+      {role === "HR_ADMIN" ? <HrWorkspace departments={departments} users={users} goals={goals} auditLogs={auditLogs} governance={governance} analytics={hrAnalytics} filters={filters} runAction={runAction} /> : null}
+      {role === "MANAGER" ? <ManagerWorkspace goals={goals} checkins={checkins} team={data?.team || []} filters={filters} runAction={runAction} /> : null}
       {role === "EMPLOYEE" ? <EmployeeWorkspace goals={goals} checkins={checkins} filters={filters} runAction={runAction} /> : null}
     </section>
   );
 }
 
-function HrWorkspace({ departments, users, goals, auditLogs, filters, runAction }) {
+function HrWorkspace({ departments, users, goals, auditLogs, governance, analytics, filters, runAction }) {
   const [departmentName, setDepartmentName] = useState("");
   const [userForm, setUserForm] = useState({ firstName: "", lastName: "", email: "", password: "Password@123", role: "EMPLOYEE", departmentId: "", managerId: "", jobTitle: "" });
+  const [sharedGoalForm, setSharedGoalForm] = useState({ employeeIds: [], primaryOwnerId: "", thrustArea: "Business Impact", title: "", description: "", targetValue: 100, weightage: 10, unit: "MIN", cycleYear: filters.year, dueDate: "" });
+  const [qoqFilter, setQoqFilter] = useState({ level: "department", id: "" });
+  const [qoqData, setQoqData] = useState(analytics?.qoq || []);
   const [modal, setModal] = useState(null);
   const managers = users.filter((item) => item.role === "MANAGER" && item.departmentId === userForm.departmentId);
   const departmentCompletion = departments.map((department) => {
@@ -354,6 +377,24 @@ function HrWorkspace({ departments, users, goals, auditLogs, filters, runAction 
       name: manager.firstName,
       goals: goals.filter((goal) => goal.owner?.managerId === manager.id).length,
     }));
+  const activeCycle = governance.cycles.find((cycle) => Number(cycle.year) === Number(filters.year));
+  const windowByQuarter = Object.fromEntries(governance.windows.map((window) => [window.quarter, window]));
+  const employees = users.filter((item) => item.role === "EMPLOYEE");
+
+  useEffect(() => {
+    setSharedGoalForm((current) => ({ ...current, cycleYear: filters.year }));
+  }, [filters.year]);
+
+  useEffect(() => {
+    setQoqData(analytics?.qoq || []);
+  }, [analytics?.qoq]);
+
+  async function refreshQoqTrend(nextFilter = qoqFilter) {
+    const params = new URLSearchParams({ cycleYear: filters.year, level: nextFilter.level });
+    if (nextFilter.id) params.set("id", nextFilter.id);
+    const data = await apiRequest(`/analytics/qoq-achievement?${params.toString()}`);
+    setQoqData(data);
+  }
 
   function unlockGoal(goal) {
     setModal({ type: "unlock", goal, form: { reason: "Approved HR exception for post-lock correction.", durationHours: 24 } });
@@ -410,6 +451,39 @@ function HrWorkspace({ departments, users, goals, auditLogs, filters, runAction 
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <Panel title="Cycle And Check-in Controls" actions={<Badge tone={activeCycle?.isGoalSettingOpen ? "green" : "slate"}>{activeCycle?.isGoalSettingOpen ? "Goal cycle open" : "Goal cycle closed"}</Badge>}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-[var(--gv-border)] bg-[var(--gv-surface-alt)] p-4">
+            <p className="font-semibold text-[var(--gv-text)]">Annual Goal Cycle</p>
+            <p className="mt-1 text-sm text-[var(--gv-text-secondary)]">Goal creation opens from 1 May, but HR can override for demo or exception windows.</p>
+            <div className="mt-4 flex gap-2">
+              <Button onClick={() => runAction(() => apiRequest("/governance/cycle", { method: "PATCH", body: { year: Number(filters.year), isGoalSettingOpen: true } }), "Goal cycle opened")}>Open</Button>
+              <Button variant="secondary" onClick={() => runAction(() => apiRequest("/governance/cycle", { method: "PATCH", body: { year: Number(filters.year), isGoalSettingOpen: false } }), "Goal cycle closed")}>Close</Button>
+            </div>
+          </div>
+          <div className="rounded-lg border border-[var(--gv-border)] bg-[var(--gv-surface-alt)] p-4">
+            <p className="font-semibold text-[var(--gv-text)]">Quarterly Check-in Windows</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {[1, 2, 3, 4].map((quarter) => {
+                const isOpen = Boolean(windowByQuarter[quarter]?.isOpen);
+                return (
+                  <Button
+                    key={quarter}
+                    variant={isOpen ? "success" : "secondary"}
+                    onClick={() => runAction(
+                      () => apiRequest("/governance/checkin-window", { method: "PATCH", body: { cycleYear: Number(filters.year), quarter, isOpen: !isOpen } }),
+                      `Q${quarter} check-in ${isOpen ? "closed" : "opened"}`,
+                    )}
+                  >
+                    Q{quarter}: {isOpen ? "Open" : "Closed"}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </Panel>
+
       <Panel title="Achievement Report" actions={<Button onClick={exportAchievementReport}><Download size={16} />Export CSV</Button>}>
         <div className="grid gap-3 text-sm text-[var(--gv-text-secondary)] md:grid-cols-3">
           <div className="rounded-lg border border-[var(--gv-border)] bg-[var(--gv-surface-alt)] p-4">
@@ -471,6 +545,58 @@ function HrWorkspace({ departments, users, goals, auditLogs, filters, runAction 
         </div>
       </Panel>
 
+      <Panel title="Push Shared Department KPI" actions={<Badge tone="blue">Shared goals</Badge>}>
+        <form className="grid gap-3" onSubmit={(event) => {
+          event.preventDefault();
+          runAction(() => apiRequest("/shared-goals", { method: "POST", body: sharedGoalForm }), "Shared goal pushed");
+          setSharedGoalForm({ employeeIds: [], primaryOwnerId: "", thrustArea: "Business Impact", title: "", description: "", targetValue: 100, weightage: 10, unit: "MIN", cycleYear: filters.year, dueDate: "" });
+        }}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Select label="Primary owner" value={sharedGoalForm.primaryOwnerId} onChange={(event) => {
+              const primaryOwnerId = event.target.value;
+              setSharedGoalForm((current) => ({
+                ...current,
+                primaryOwnerId,
+                employeeIds: current.employeeIds.includes(primaryOwnerId) ? current.employeeIds : [...current.employeeIds, primaryOwnerId],
+              }));
+            }} required>
+              <option value="">Select employee</option>
+              {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName}</option>)}
+            </Select>
+            <Select label="Thrust Area" value={sharedGoalForm.thrustArea} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, thrustArea: event.target.value })}>
+              {thrustAreaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+            </Select>
+            <Input label="Goal title" value={sharedGoalForm.title} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, title: event.target.value })} required />
+            <Select label="UoM" value={sharedGoalForm.unit} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, unit: event.target.value })}>
+              {unitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </Select>
+            {["MIN", "MAX"].includes(sharedGoalForm.unit) ? <Input label="Target" type="number" value={sharedGoalForm.targetValue} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, targetValue: event.target.value })} required /> : null}
+            <Input label="Default weightage %" type="number" min="10" max="100" value={sharedGoalForm.weightage} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, weightage: event.target.value })} required />
+            <Input label="Deadline" type="date" value={sharedGoalForm.dueDate} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, dueDate: event.target.value })} />
+          </div>
+          <Textarea label="Description" value={sharedGoalForm.description} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, description: event.target.value })} />
+          <div className="grid gap-2 rounded-lg border border-[var(--gv-border)] bg-[var(--gv-surface-alt)] p-3">
+            <p className="text-sm font-semibold text-[var(--gv-text)]">Recipients</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {employees.map((employee) => (
+                <label key={employee.id} className="flex items-center gap-2 text-sm text-[var(--gv-text-secondary)]">
+                  <input
+                    type="checkbox"
+                    checked={sharedGoalForm.employeeIds.includes(employee.id)}
+                    onChange={(event) => setSharedGoalForm((current) => ({
+                      ...current,
+                      employeeIds: event.target.checked ? [...new Set([...current.employeeIds, employee.id])] : current.employeeIds.filter((id) => id !== employee.id),
+                    }))}
+                  />
+                  {employee.firstName} {employee.lastName}
+                </label>
+              ))}
+            </div>
+          </div>
+          <Button><Plus size={16} />Push shared KPI</Button>
+        </form>
+      </Panel>
+
       <Panel title="Completion Rate By Department">
         <div className="h-72 min-w-0">
           <ResponsiveContainer width="100%" height="100%">
@@ -507,6 +633,100 @@ function HrWorkspace({ departments, users, goals, auditLogs, filters, runAction 
               <YAxis />
               <Tooltip />
               <Bar dataKey="goals" fill="var(--gv-accent)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Panel>
+
+      <Panel title="QoQ Achievement Trend" actions={
+        <div className="flex gap-2">
+          <Select label="Level" value={qoqFilter.level} onChange={(event) => {
+            const next = { level: event.target.value, id: "" };
+            setQoqFilter(next);
+            refreshQoqTrend(next);
+          }}>
+            <option value="individual">Individual</option>
+            <option value="team">Team</option>
+            <option value="department">Department</option>
+          </Select>
+          <Select label="Selection" value={qoqFilter.id} onChange={(event) => {
+            const next = { ...qoqFilter, id: event.target.value };
+            setQoqFilter(next);
+            refreshQoqTrend(next);
+          }}>
+            <option value="">All</option>
+            {qoqFilter.level === "individual" ? employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName}</option>) : null}
+            {qoqFilter.level === "team" ? users.filter((item) => item.role === "MANAGER").map((manager) => <option key={manager.id} value={manager.id}>{manager.firstName} {manager.lastName}</option>) : null}
+            {qoqFilter.level === "department" ? departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>) : null}
+          </Select>
+        </div>
+      }>
+        <div className="h-72 min-w-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={qoqData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="quarter" />
+              <YAxis domain={[0, 100]} />
+              <Tooltip />
+              <Line type="monotone" dataKey="score" stroke="var(--gv-primary)" strokeWidth={3} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Panel>
+
+      <Panel title="Completion Rate Heatmap">
+        <div className="grid gap-3">
+          <div className="grid grid-cols-[1fr_repeat(4,80px)] gap-2 text-xs font-semibold text-[var(--gv-text-secondary)]">
+            <span>Department</span>
+            {[1, 2, 3, 4].map((quarter) => <span key={quarter} className="text-center">Q{quarter}</span>)}
+          </div>
+          {(analytics?.heatmap || []).map((row) => (
+            <div key={row.departmentId} className="grid grid-cols-[1fr_repeat(4,80px)] items-center gap-2">
+              <span className="text-sm font-semibold text-[var(--gv-text)]">{row.department}</span>
+              {row.quarters.map((cell) => (
+                <span
+                  key={`${row.departmentId}-${cell.quarter}`}
+                  className={`rounded-md px-2 py-3 text-center text-xs font-bold ${cell.completionRate >= 80 ? "bg-[var(--gv-success-surface)] text-[var(--gv-success)]" : cell.completionRate >= 50 ? "bg-[var(--gv-warning-surface)] text-[var(--gv-warning)]" : "bg-[var(--gv-danger-surface)] text-[var(--gv-danger)]"}`}
+                >
+                  {cell.completionRate}%
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title="Goal Distribution Analysis">
+        <div className="grid gap-6 lg:grid-cols-3">
+          {[
+            ["By Thrust Area", analytics?.distribution?.thrustArea || []],
+            ["By UoM Type", analytics?.distribution?.uomType || []],
+            ["By Status", analytics?.distribution?.status || []],
+          ].map(([title, data]) => (
+            <div key={title} className="h-72 min-w-0">
+              <p className="mb-2 text-sm font-semibold text-[var(--gv-text)]">{title}</p>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={data} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} label>
+                    {data.map((entry, index) => <Cell key={entry.name} fill={chartFills[index % chartFills.length]} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title="Manager Effectiveness Dashboard">
+        <div className="h-72 min-w-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={analytics?.managerEffectiveness || []} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" domain={[0, 100]} />
+              <YAxis dataKey="manager" type="category" width={120} />
+              <Tooltip />
+              <Bar dataKey="completionRate" fill="var(--gv-success)" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -610,10 +830,19 @@ function HrWorkspace({ departments, users, goals, auditLogs, filters, runAction 
   );
 }
 
-function ManagerWorkspace({ goals, checkins, runAction }) {
+function ManagerWorkspace({ goals, checkins, team, filters, runAction }) {
   const pending = goals.filter((goal) => goal.approvalStatus === "PENDING");
+  const pendingSheets = Object.values(
+    pending.filter((goal) => goal.submittedAt).reduce((acc, goal) => {
+      const ownerId = goal.owner?.id || goal.ownerId;
+      acc[ownerId] = acc[ownerId] || { owner: goal.owner, goals: [] };
+      acc[ownerId].goals.push(goal);
+      return acc;
+    }, {}),
+  );
   const submitted = checkins.filter((checkin) => checkin.submissionStatus === "submitted");
   const [modal, setModal] = useState(null);
+  const [sharedGoalForm, setSharedGoalForm] = useState({ employeeIds: [], primaryOwnerId: "", thrustArea: "Business Impact", title: "", description: "", targetValue: 100, weightage: 10, unit: "MIN", cycleYear: filters.year, dueDate: "" });
 
   function approve(goal) {
     setModal({
@@ -623,6 +852,7 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
         title: goal.title,
         description: goal.description || "",
         targetValue: goal.targetValue || 0,
+        weightage: goal.weightage || 10,
         unit: goal.unit,
         quarter: goal.quarter,
         year: goal.year,
@@ -635,6 +865,27 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
 
   function reject(goal) {
     setModal({ type: "reject", goal, form: { managerComment: goal.managerComment || "" } });
+  }
+
+  function approveSheet(sheet) {
+    setModal({
+      type: "approveSheet",
+      sheet,
+      form: {
+        managerComment: "Approved for this annual cycle.",
+        goals: sheet.goals.map((goal) => ({
+          id: goal.id,
+          title: goal.title,
+          targetValue: goal.targetValue || 0,
+          weightage: goal.weightage || 10,
+          dueDate: formatDateInput(goal.dueDate),
+        })),
+      },
+    });
+  }
+
+  function returnSheet(sheet) {
+    setModal({ type: "returnSheet", sheet, form: { managerComment: "Please rebalance goal weightages and resubmit." } });
   }
 
   function review(checkin) {
@@ -665,13 +916,89 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
         "Review submitted",
       );
     }
+    if (modal.type === "approveSheet") {
+      await runAction(
+        () => apiRequest(`/goal-sheets/${modal.sheet.owner.id}/approve`, { method: "PATCH", body: { cycleYear: Number(filters.year), managerComment: modal.form.managerComment, goals: modal.form.goals } }),
+        "Goal sheet approved and locked",
+      );
+    }
+    if (modal.type === "returnSheet") {
+      await runAction(
+        () => apiRequest(`/goal-sheets/${modal.sheet.owner.id}/return`, { method: "PATCH", body: { cycleYear: Number(filters.year), managerComment: modal.form.managerComment } }),
+        "Goal sheet returned for rework",
+      );
+    }
     setModal(null);
   }
 
   return (
     <div className="grid gap-6">
+      <Panel id="pending-sheets" title="Pending Goal Sheets" actions={<Badge tone="yellow">{pendingSheets.length} sheets</Badge>}>
+        {pendingSheets.length ? (
+          <div className="grid gap-3">
+            {pendingSheets.map((sheet) => (
+              <div key={sheet.owner.id} className="rounded-lg border border-[var(--gv-border)] bg-[var(--gv-surface-alt)] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-[var(--gv-text)]">{sheet.owner.firstName} {sheet.owner.lastName}</p>
+                    <p className="text-sm text-[var(--gv-text-secondary)]">{sheet.goals.length} goals · {sheet.goals.reduce((sum, goal) => sum + Number(goal.weightage || 0), 0)}% weightage</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => returnSheet(sheet)}>Return</Button>
+                    <Button onClick={() => approveSheet(sheet)}>Review Sheet</Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : <EmptyState>No submitted annual goal sheets are waiting.</EmptyState>}
+      </Panel>
+
       <Panel id="pending-approvals" title="Pending Approvals" actions={<Badge tone="yellow">{pending.length} pending</Badge>}>
         <GoalsTable goals={pending} onApprove={approve} onReject={reject} />
+      </Panel>
+      <Panel title="Push Shared KPI To Team">
+        <form className="grid gap-3" onSubmit={(event) => {
+          event.preventDefault();
+          runAction(() => apiRequest("/shared-goals", { method: "POST", body: sharedGoalForm }), "Shared goal pushed to team");
+          setSharedGoalForm({ employeeIds: [], primaryOwnerId: "", thrustArea: "Business Impact", title: "", description: "", targetValue: 100, weightage: 10, unit: "MIN", cycleYear: filters.year, dueDate: "" });
+        }}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Select label="Primary owner" value={sharedGoalForm.primaryOwnerId} onChange={(event) => {
+              const primaryOwnerId = event.target.value;
+              setSharedGoalForm((current) => ({ ...current, primaryOwnerId, employeeIds: current.employeeIds.includes(primaryOwnerId) ? current.employeeIds : [...current.employeeIds, primaryOwnerId] }));
+            }} required>
+              <option value="">Select direct report</option>
+              {team.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName}</option>)}
+            </Select>
+            <Select label="Thrust Area" value={sharedGoalForm.thrustArea} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, thrustArea: event.target.value })}>
+              {thrustAreaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+            </Select>
+            <Input label="Goal title" value={sharedGoalForm.title} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, title: event.target.value })} required />
+            <Input label="Target" type="number" value={sharedGoalForm.targetValue} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, targetValue: event.target.value })} required />
+            <Input label="Weightage %" type="number" min="10" max="100" value={sharedGoalForm.weightage} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, weightage: event.target.value })} required />
+            <Select label="UoM" value={sharedGoalForm.unit} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, unit: event.target.value })}>
+              {unitOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </Select>
+          </div>
+          <Textarea label="Description" value={sharedGoalForm.description} onChange={(event) => setSharedGoalForm({ ...sharedGoalForm, description: event.target.value })} />
+          <div className="grid gap-2 md:grid-cols-2">
+            {team.map((employee) => (
+              <label key={employee.id} className="flex items-center gap-2 text-sm text-[var(--gv-text-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={sharedGoalForm.employeeIds.includes(employee.id)}
+                  onChange={(event) => setSharedGoalForm((current) => ({
+                    ...current,
+                    employeeIds: event.target.checked ? [...new Set([...current.employeeIds, employee.id])] : current.employeeIds.filter((id) => id !== employee.id),
+                  }))}
+                />
+                {employee.firstName} {employee.lastName}
+              </label>
+            ))}
+          </div>
+          <Button><Plus size={16} />Push shared KPI</Button>
+        </form>
       </Panel>
       <Panel id="submitted-checkins" title="Submitted Quarterly Check-ins" actions={<Badge tone="blue">{submitted.length} ready</Badge>}>
         {submitted.length ? (
@@ -693,11 +1020,38 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
       </Panel>
       {modal ? (
         <Modal
-          title={modal.type === "approve" ? "Review Pending Goal" : modal.type === "reject" ? "Reject Goal Request" : "Review Quarterly Check-in"}
-          subtitle={modal.type === "approve" ? "Review employee input, adjust fields if needed, then set manager priority and deadline." : "Add clear manager feedback before saving."}
+          title={modal.type === "approveSheet" ? "Review Annual Goal Sheet" : modal.type === "returnSheet" ? "Return Goal Sheet" : modal.type === "approve" ? "Review Pending Goal" : modal.type === "reject" ? "Reject Goal Request" : "Review Quarterly Check-in"}
+          subtitle={modal.type === "approveSheet" ? "Edit targets or weightages before approval. Total weightage must remain 100%." : modal.type === "approve" ? "Review employee input, adjust fields if needed, then set manager priority and deadline." : "Add clear manager feedback before saving."}
           onClose={() => setModal(null)}
         >
           <form className="grid gap-5" onSubmit={submitManagerModal}>
+            {modal.type === "approveSheet" ? (
+              <>
+                <div className="grid gap-3">
+                  {modal.form.goals.map((goal, index) => (
+                    <div key={goal.id} className="grid gap-3 rounded-lg border border-[var(--gv-border)] p-3 md:grid-cols-[1fr_120px_150px]">
+                      <p className="font-semibold text-[var(--gv-text)]">{goal.title}</p>
+                      <Input label="Target" type="number" value={goal.targetValue} onChange={(event) => setModal((current) => {
+                        const goals = [...current.form.goals];
+                        goals[index] = { ...goals[index], targetValue: event.target.value };
+                        return { ...current, form: { ...current.form, goals } };
+                      })} />
+                      <Input label="Weightage %" type="number" min="10" max="100" value={goal.weightage} onChange={(event) => setModal((current) => {
+                        const goals = [...current.form.goals];
+                        goals[index] = { ...goals[index], weightage: event.target.value };
+                        return { ...current, form: { ...current.form, goals } };
+                      })} />
+                    </div>
+                  ))}
+                </div>
+                <Input label="Manager comment" value={modal.form.managerComment} onChange={(event) => updateModalForm("managerComment", event.target.value)} />
+              </>
+            ) : null}
+
+            {modal.type === "returnSheet" ? (
+              <Textarea label="Rework instructions" value={modal.form.managerComment} onChange={(event) => updateModalForm("managerComment", event.target.value)} required />
+            ) : null}
+
             {modal.type === "approve" ? (
               <>
                 <div className="rounded-lg border border-[var(--gv-accent-light)] bg-[var(--gv-info-surface)] p-4">
@@ -721,6 +1075,7 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
                     {["MIN", "MAX"].includes(modal.form.unit) ? (
                       <Input label="Target value" type="number" min="0" value={modal.form.targetValue} onChange={(event) => updateModalForm("targetValue", event.target.value)} required />
                     ) : null}
+                    <Input label="Weightage %" type="number" min="10" max="100" value={modal.form.weightage} onChange={(event) => updateModalForm("weightage", event.target.value)} required />
                     <Input label="Quarter" type="number" min="1" max="4" value={modal.form.quarter} onChange={(event) => updateModalForm("quarter", event.target.value)} required />
                     <Input label="Year" type="number" value={modal.form.year} onChange={(event) => updateModalForm("year", event.target.value)} required />
                     <Textarea label="Description" value={modal.form.description} onChange={(event) => updateModalForm("description", event.target.value)} />
@@ -760,7 +1115,7 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
 
             <div className="flex justify-end gap-3 border-t border-[var(--gv-border)] pt-4">
               <Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancel</Button>
-              <Button type="submit">{modal.type === "approve" ? "Approve goal" : modal.type === "reject" ? "Reject goal" : "Submit review"}</Button>
+              <Button type="submit">{modal.type === "approveSheet" ? "Approve sheet" : modal.type === "returnSheet" ? "Return sheet" : modal.type === "approve" ? "Approve goal" : modal.type === "reject" ? "Reject goal" : "Submit review"}</Button>
             </div>
           </form>
         </Modal>
@@ -770,15 +1125,17 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
 }
 
 function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
-  const [goalForm, setGoalForm] = useState({ title: "", description: "", targetValue: 100, unit: "MIN", quarter: filters.quarter, year: filters.year, dueDate: "" });
+  const [goalForm, setGoalForm] = useState({ thrustArea: "Business Impact", title: "", description: "", targetValue: 100, weightage: 10, unit: "MIN", quarter: filters.quarter, year: filters.year, cycleYear: filters.year, dueDate: "" });
   const [modal, setModal] = useState(null);
+  const draftGoals = goals.filter((goal) => goal.approvalStatus === "PENDING");
+  const draftWeightage = draftGoals.reduce((sum, goal) => sum + Number(goal.weightage || 0), 0);
 
   function updateProgress(goal) {
-    setModal({ type: "progress", goal, form: { progress: goal.progress || 0, status: goal.unit === "TIMELINE" ? "COMPLETED" : goal.status, employeeNote: goal.employeeNote || "Updated from dashboard." } });
+    setModal({ type: "progress", goal, form: { progress: goal.progress || 0, status: goal.unit === "TIMELINE" ? "completed" : "on_track", employeeNote: goal.employeeNote || "Updated from dashboard." } });
   }
 
   function submitCheckin(goal) {
-    setModal({ type: "submit", goal, form: { wins: "Progress submitted for manager review.", blockers: "None noted.", nextSteps: "Continue into next quarter.", status: goal.status === "COMPLETED" ? "completed" : "delayed" } });
+    setModal({ type: "submit", goal, form: { wins: "Progress submitted for manager review.", blockers: "None noted.", nextSteps: "Continue into next quarter.", status: goal.status === "COMPLETED" ? "completed" : "on_track" } });
   }
 
   function updateModalForm(field, value) {
@@ -789,7 +1146,7 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
     event.preventDefault();
     if (modal.type === "progress") {
       await runAction(
-        () => apiRequest(`/goals/${modal.goal.id}/progress`, { method: "PATCH", body: { ...modal.form, progress: Number(modal.form.progress) } }),
+        () => apiRequest(`/goals/${modal.goal.id}/progress`, { method: "PATCH", body: { ...modal.form, status: modal.form.status === "completed" ? "COMPLETED" : "ACTIVE", progress: Number(modal.form.progress) } }),
         "Progress updated",
       );
     }
@@ -817,8 +1174,11 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
         <form className="grid gap-3" onSubmit={(event) => {
           event.preventDefault();
           runAction(() => apiRequest("/goals", { method: "POST", body: goalForm }), "Goal sent to manager for approval");
-          setGoalForm({ title: "", description: "", targetValue: 100, unit: "MIN", quarter: filters.quarter, year: filters.year, dueDate: "" });
+          setGoalForm({ thrustArea: "Business Impact", title: "", description: "", targetValue: 100, weightage: 10, unit: "MIN", quarter: filters.quarter, year: filters.year, cycleYear: filters.year, dueDate: "" });
         }}>
+          <Select label="Thrust Area" value={goalForm.thrustArea} onChange={(event) => setGoalForm({ ...goalForm, thrustArea: event.target.value })}>
+            {thrustAreaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+          </Select>
           <Input label="Goal name" value={goalForm.title} onChange={(event) => setGoalForm({ ...goalForm, title: event.target.value })} required />
           <Input label="Description" value={goalForm.description} onChange={(event) => setGoalForm({ ...goalForm, description: event.target.value })} required />
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -828,6 +1188,7 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
             {["MIN", "MAX"].includes(goalForm.unit) ? (
               <Input label="Target value" type="number" min="0" value={goalForm.targetValue} onChange={(event) => setGoalForm({ ...goalForm, targetValue: event.target.value })} required />
             ) : null}
+            <Input label="Weightage %" type="number" min="10" max="100" value={goalForm.weightage} onChange={(event) => setGoalForm({ ...goalForm, weightage: event.target.value })} required />
             {goalForm.unit === "TIMELINE" ? (
               <Input label="Deadline" type="date" value={goalForm.dueDate} onChange={(event) => setGoalForm({ ...goalForm, dueDate: event.target.value })} required />
             ) : null}
@@ -838,6 +1199,18 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
         </form>
       </Panel>
       <Panel id="my-goals" title="My Goals">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--gv-border)] bg-[var(--gv-surface-alt)] p-3">
+          <div className="text-sm text-[var(--gv-text-secondary)]">
+            Draft sheet: {draftGoals.length}/8 goals, {draftWeightage}% weightage
+          </div>
+          <Button
+            variant={draftWeightage === 100 ? "primary" : "secondary"}
+            disabled={draftWeightage !== 100 || draftGoals.length === 0}
+            onClick={() => runAction(() => apiRequest("/goal-sheets/submit", { method: "POST", body: { cycleYear: Number(filters.year) } }), "Goal sheet submitted to manager")}
+          >
+            Submit Goal Sheet
+          </Button>
+        </div>
         <GoalsTable goals={goals} onProgress={updateProgress} onSubmitCheckin={submitCheckin} />
       </Panel>
       <Panel title="Manager Feedback">
@@ -880,7 +1253,7 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
                   <div className="rounded-md border border-[var(--gv-accent-light)] bg-[var(--gv-info-surface)] px-4 py-3 text-sm text-[var(--gv-accent)]">Timeline goals are scored by completion on or before the manager deadline.</div>
                 )}
                 <Select label="Status" value={modal.form.status} onChange={(event) => updateModalForm("status", event.target.value)}>
-                  {goalStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+                  {goalStatusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
                 </Select>
                 <Textarea label="Progress note" value={modal.form.employeeNote} onChange={(event) => updateModalForm("employeeNote", event.target.value)} />
               </>
@@ -889,9 +1262,7 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
             {modal.type === "submit" ? (
               <>
                 <Select label="Final status" value={modal.form.status} onChange={(event) => updateModalForm("status", event.target.value)}>
-                  <option value="completed">Completed</option>
-                  <option value="delayed">Delayed</option>
-                  <option value="abandoned">Abandoned</option>
+                  {goalStatusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
                 </Select>
                 <Textarea label="Wins" value={modal.form.wins} onChange={(event) => updateModalForm("wins", event.target.value)} required />
                 <Textarea label="Blockers" value={modal.form.blockers} onChange={(event) => updateModalForm("blockers", event.target.value)} />

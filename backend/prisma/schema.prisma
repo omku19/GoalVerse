@@ -101,6 +101,7 @@ model User {
   activityLogs             ActivityLog[]      @relation("ActivityActor")
   notificationsReceived    Notification[]     @relation("NotificationRecipient")
   notificationsTriggered   Notification[]     @relation("NotificationActor")
+  authSessions             AuthSession[]
 
   @@index([departmentId])
   @@index([managerId])
@@ -126,6 +127,10 @@ model Goal {
   progress       Int            @default(0)
   employeeNote   String?        @map("employee_note") @db.Text
   managerComment String?        @map("manager_comment") @db.Text
+  lockedAt       DateTime?      @map("locked_at") @db.Timestamptz(6)
+  unlockedUntil  DateTime?      @map("unlocked_until") @db.Timestamptz(6)
+  unlockedById   String?        @map("unlocked_by_id") @db.Uuid
+  unlockReason   String?        @map("unlock_reason") @db.Text
   startDate      DateTime?      @map("start_date") @db.Date
   dueDate        DateTime?      @map("due_date") @db.Date
   quarter        Int?
@@ -156,6 +161,25 @@ model Goal {
   @@index([dueDate])
   @@index([year, quarter])
   @@map("goals")
+}
+
+model AuthSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  jwtId       String    @unique @map("jwt_id") @db.VarChar(80)
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([jwtId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("auth_sessions")
 }
 
 model QuarterlyCheckin {

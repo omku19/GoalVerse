@@ -1,3 +1,5 @@
+import env from "../config/env.js";
+import prisma from "../config/db.js";
 import { verifyToken } from "../utils/jwt.js";
 
 function unauthorized(res) {
@@ -6,7 +8,7 @@ function unauthorized(res) {
   });
 }
 
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -17,12 +19,41 @@ export function authenticate(req, res, next) {
 
   try {
     const decoded = verifyToken(token);
+    const session = decoded.jti
+      ? await prisma.authSession.findUnique({
+        where: { jwtId: decoded.jti },
+        include: { user: { select: { id: true, email: true, role: true, isActive: true } } },
+      })
+      : null;
+    const now = new Date();
+    const idleTimeoutMs = env.sessionIdleTimeoutMinutes * 60 * 1000;
+
+    if (!session || !session.user?.isActive || session.revokedAt || session.expiresAt <= now) {
+      return unauthorized(res);
+    }
+
+    if (now.getTime() - session.lastSeenAt.getTime() > idleTimeoutMs) {
+      await prisma.authSession.update({
+        where: { id: session.id },
+        data: { revokedAt: now },
+      });
+      return unauthorized(res);
+    }
 
     req.user = {
-      id: decoded.sub,
-      email: decoded.email,
-      role: decoded.role,
+      id: session.user.id,
+      email: session.user.email,
+      role: session.user.role,
     };
+    req.authToken = token;
+    req.authSession = session;
+
+    if (now.getTime() - session.lastSeenAt.getTime() > 60 * 1000) {
+      await prisma.authSession.update({
+        where: { id: session.id },
+        data: { lastSeenAt: now },
+      });
+    }
 
     return next();
   } catch (_error) {

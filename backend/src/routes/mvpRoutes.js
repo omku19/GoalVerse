@@ -109,6 +109,64 @@ function decorateGoals(goals) {
   return goals.map(decorateGoal);
 }
 
+function csvValue(value) {
+  if (value === null || value === undefined) return "";
+  const text = value instanceof Date ? value.toISOString() : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows, columns) {
+  return [
+    columns.map((column) => csvValue(column.header)).join(","),
+    ...rows.map((row) => columns.map((column) => csvValue(column.value(row))).join(",")),
+  ].join("\n");
+}
+
+function normalizeAuditValue(value) {
+  if (value instanceof Date) return value.toISOString();
+  if (value === undefined) return null;
+  return value;
+}
+
+function buildFieldChanges(before, after, fields) {
+  return fields
+    .map((field) => ({
+      field,
+      oldValue: normalizeAuditValue(before?.[field]),
+      newValue: normalizeAuditValue(after?.[field]),
+    }))
+    .filter((change) => JSON.stringify(change.oldValue) !== JSON.stringify(change.newValue));
+}
+
+function isGoalLocked(goal) {
+  return Boolean(goal?.lockedAt || goal?.approvedAt);
+}
+
+function isGoalUnlocked(goal) {
+  return Boolean(goal?.unlockedUntil && new Date(goal.unlockedUntil) > new Date());
+}
+
+async function writePostLockGoalAudit({ actorId, before, after, fields, action = "goal.audit.updated", summary }) {
+  if (!isGoalLocked(before)) return null;
+
+  const changes = buildFieldChanges(before, after, fields);
+  if (!changes.length) return null;
+
+  return writeLog({
+    actorId,
+    goalId: before.id,
+    departmentId: before.departmentId,
+    action,
+    entityType: "goal",
+    entityId: before.id,
+    summary: summary || `${changes.length} locked goal field${changes.length === 1 ? "" : "s"} changed`,
+    metadata: {
+      lockedAt: before.lockedAt || before.approvedAt,
+      changes,
+    },
+  });
+}
+
 async function getUser(userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || !user.isActive) throw forbidden("Inactive or missing user");
@@ -158,6 +216,17 @@ const goalSchema = z.object({
   year: z.coerce.number().int().min(2024).max(2035),
   dueDate: z.string().optional().nullable(),
 });
+const adminGoalUpdateSchema = goalSchema.partial().extend({
+  progress: z.coerce.number().min(0).optional(),
+  status: z.enum(["ACTIVE", "PAUSED", "AT_RISK", "COMPLETED", "SUBMITTED"]).optional(),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
+  employeeNote: z.string().max(500).optional().nullable(),
+  managerComment: z.string().max(1000).optional().nullable(),
+});
+const unlockGoalSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+  durationHours: z.coerce.number().int().min(1).max(168).optional().default(24),
+});
 
 function normalizeGoalPayload(payload) {
   const unit = String(payload.unit || "").toUpperCase();
@@ -175,6 +244,33 @@ function normalizeGoalPayload(payload) {
     targetValue: ["TIMELINE", "ZERO"].includes(unit) ? 0 : Number(payload.targetValue),
     dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
   };
+}
+
+function normalizeAdminGoalUpdate(payload, existing) {
+  const data = { ...payload };
+  const nextUnit = String(payload.unit || existing.unit || "").toUpperCase();
+
+  if (payload.unit) {
+    data.unit = nextUnit;
+  }
+
+  if (payload.targetValue !== undefined) {
+    data.targetValue = Number(payload.targetValue);
+  }
+
+  if (payload.dueDate !== undefined) {
+    data.dueDate = payload.dueDate ? new Date(payload.dueDate) : null;
+  }
+
+  if (["MIN", "MAX"].includes(nextUnit) && data.targetValue !== undefined && Number(data.targetValue) <= 0) {
+    throw badRequest("Target value must be greater than zero for Min and Max unit types");
+  }
+
+  if (nextUnit === "TIMELINE" && data.dueDate === null) {
+    throw badRequest("Deadline is required for Timeline goals");
+  }
+
+  return data;
 }
 
 router.use(authenticate);
@@ -328,10 +424,127 @@ router.get("/goals", asyncHandler(async (req, res) => {
   res.json({ data: decorateGoals(goals) });
 }));
 
+router.get("/reports/achievement.csv", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const goals = await prisma.goal.findMany({
+    where: parseQuarterYear(req.query),
+    include: {
+      owner: { select: userSelect() },
+      department: { select: { id: true, name: true } },
+      quarterlyCheckins: { orderBy: { submittedAt: "desc" }, take: 1 },
+    },
+    orderBy: [{ year: "desc" }, { quarter: "desc" }, { updatedAt: "desc" }],
+  });
+  const decoratedGoals = decorateGoals(goals);
+  const csv = toCsv(decoratedGoals, [
+    { header: "Employee", value: (goal) => `${goal.owner?.firstName || ""} ${goal.owner?.lastName || ""}`.trim() },
+    { header: "Email", value: (goal) => goal.owner?.email },
+    { header: "Department", value: (goal) => goal.department?.name },
+    { header: "Manager", value: (goal) => goal.owner?.manager ? `${goal.owner.manager.firstName} ${goal.owner.manager.lastName}` : "" },
+    { header: "Goal Title", value: (goal) => goal.title },
+    { header: "Planned Description", value: (goal) => goal.description },
+    { header: "Planned Target", value: (goal) => goal.targetValue },
+    { header: "Measurement Unit", value: (goal) => goal.unit },
+    { header: "Quarter", value: (goal) => goal.quarter },
+    { header: "Year", value: (goal) => goal.year },
+    { header: "Manager Deadline", value: (goal) => goal.dueDate },
+    { header: "Priority", value: (goal) => goal.priority },
+    { header: "Approval Status", value: (goal) => goal.approvalStatus },
+    { header: "Goal Status", value: (goal) => goal.status },
+    { header: "Actual Achievement", value: (goal) => goal.progress },
+    { header: "Score Percent", value: (goal) => goal.score?.percent },
+    { header: "Employee Note", value: (goal) => goal.employeeNote },
+    { header: "Latest Check-in Status", value: (goal) => goal.quarterlyCheckins?.[0]?.status },
+    { header: "Latest Wins", value: (goal) => goal.quarterlyCheckins?.[0]?.wins },
+    { header: "Latest Blockers", value: (goal) => goal.quarterlyCheckins?.[0]?.blockers },
+  ]);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="goalverse-achievement-report-q${req.query.quarter || "all"}-${req.query.year || "all"}.csv"`);
+  res.status(200).send(csv);
+}));
+
+router.get("/audit-trail", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const where = { action: { startsWith: "goal.audit." } };
+  if (req.query.goal_id) where.goalId = String(req.query.goal_id);
+  if (req.query.user_id) where.actorId = String(req.query.user_id);
+
+  const logs = await prisma.activityLog.findMany({
+    where,
+    include: { actor: { select: userSelect() }, goal: { include: goalInclude() } },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+
+  res.json({ data: logs });
+}));
+
 router.get("/goals/:id", asyncHandler(async (req, res) => {
   const goal = await prisma.goal.findUnique({ where: { id: req.params.id }, include: goalInclude() });
   if (!goal) throw notFound("Goal not found");
   await ensureGoalAccess(req, goal);
+  res.json({ data: decorateGoal(goal) });
+}));
+
+router.patch("/goals/:id/unlock", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const payload = unlockGoalSchema.parse(req.body);
+  const existing = await prisma.goal.findUnique({ where: { id: req.params.id } });
+  if (!existing) throw notFound("Goal not found");
+  if (!isGoalLocked(existing)) throw badRequest("Only approved locked goals can be unlocked");
+
+  const unlockedUntil = new Date(Date.now() + payload.durationHours * 60 * 60 * 1000);
+  const goal = await prisma.goal.update({
+    where: { id: req.params.id },
+    data: {
+      unlockedUntil,
+      unlockedById: req.user.id,
+      unlockReason: payload.reason,
+    },
+    include: goalInclude(),
+  });
+
+  await writeLog({
+    actorId: req.user.id,
+    goalId: goal.id,
+    departmentId: goal.departmentId,
+    action: "goal.audit.unlocked",
+    entityType: "goal",
+    entityId: goal.id,
+    summary: payload.reason,
+    metadata: {
+      lockedAt: existing.lockedAt || existing.approvedAt,
+      unlockedUntil,
+      reason: payload.reason,
+    },
+  });
+
+  res.json({ data: decorateGoal(goal) });
+}));
+
+router.patch("/goals/:id/admin-update", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const payload = adminGoalUpdateSchema.parse(req.body);
+  const existing = await prisma.goal.findUnique({ where: { id: req.params.id } });
+  if (!existing) throw notFound("Goal not found");
+  if (isGoalLocked(existing) && !isGoalUnlocked(existing)) {
+    throw badRequest("Locked goals must be unlocked by HR before exception edits");
+  }
+
+  const data = normalizeAdminGoalUpdate(payload, existing);
+  const auditedFields = Object.keys(data).filter((field) => field !== "unlockedUntil" && field !== "unlockReason" && field !== "unlockedById");
+  const goal = await prisma.goal.update({
+    where: { id: req.params.id },
+    data,
+    include: goalInclude(),
+  });
+
+  await writePostLockGoalAudit({
+    actorId: req.user.id,
+    before: existing,
+    after: goal,
+    fields: auditedFields,
+    action: "goal.audit.admin_updated",
+    summary: "HR exception edit after goal lock",
+  });
+
   res.json({ data: decorateGoal(goal) });
 }));
 
@@ -382,6 +595,7 @@ router.patch("/goals/:id/approve", authorizeRoles([roles.manager]), asyncHandler
       managerComment: payload.managerComment,
       approvedById: req.user.id,
       approvedAt: new Date(),
+      lockedAt: new Date(),
     },
     include: goalInclude(),
   });
@@ -426,6 +640,13 @@ router.patch("/goals/:id/progress", authorizeRoles([roles.employee]), asyncHandl
     include: goalInclude(),
   });
   await writeLog({ actorId: req.user.id, goalId: goal.id, departmentId: goal.departmentId, action: "goal.progress_updated", entityType: "goal", entityId: goal.id, summary: payload.employeeNote || "Progress updated", metadata: { oldProgress: existing.progress, newProgress: goal.progress } });
+  await writePostLockGoalAudit({
+    actorId: req.user.id,
+    before: existing,
+    after: goal,
+    fields: ["progress", "status", "employeeNote"],
+    summary: "Employee updated locked goal progress",
+  });
   res.json({ data: decorateGoal(goal) });
 }));
 
@@ -434,6 +655,13 @@ router.patch("/goals/:id/complete", authorizeRoles([roles.employee]), asyncHandl
   if (!existing) throw notFound("Goal not found");
   if (existing.ownerId !== req.user.id) throw forbidden();
   const goal = await prisma.goal.update({ where: { id: req.params.id }, data: { progress: Math.round(existing.targetValue), status: "COMPLETED" }, include: goalInclude() });
+  await writePostLockGoalAudit({
+    actorId: req.user.id,
+    before: existing,
+    after: goal,
+    fields: ["progress", "status"],
+    summary: "Employee completed locked goal",
+  });
   res.json({ data: decorateGoal(goal) });
 }));
 
@@ -456,7 +684,14 @@ router.post("/checkins", authorizeRoles([roles.employee]), asyncHandler(async (r
     data: { ...payload, submittedById: req.user.id, submittedAt: new Date(), submissionStatus: "submitted" },
     include: { goal: true, submittedBy: { select: userSelect() }, reviewedBy: { select: userSelect() } },
   });
-  await prisma.goal.update({ where: { id: goal.id }, data: { status: "SUBMITTED", progress: Math.round(payload.progress) } });
+  const updatedGoal = await prisma.goal.update({ where: { id: goal.id }, data: { status: "SUBMITTED", progress: Math.round(payload.progress) } });
+  await writePostLockGoalAudit({
+    actorId: req.user.id,
+    before: goal,
+    after: updatedGoal,
+    fields: ["progress", "status"],
+    summary: "Employee submitted locked goal check-in",
+  });
   await notify({ recipientId: goal.owner.managerId, actorId: req.user.id, goalId: goal.id, type: "checkin_submitted", title: "Quarterly check-in submitted", message: `${goal.title} is ready for review` });
   res.status(201).json({ data: checkin });
 }));
@@ -491,7 +726,7 @@ router.patch("/checkins/:id/review", authorizeRoles([roles.manager]), asyncHandl
   res.json({ data: checkin });
 }));
 
-router.get("/activity-logs", asyncHandler(async (req, res) => {
+router.get("/activity-logs", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
   const where = {};
   if (req.query.goal_id) where.goalId = String(req.query.goal_id);
   if (req.query.user_id) where.actorId = String(req.query.user_id);

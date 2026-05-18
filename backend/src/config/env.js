@@ -11,6 +11,11 @@ function parseList(value, fallback = []) {
     .filter(Boolean);
 }
 
+function parsePositiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const env = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || "development",
@@ -24,6 +29,7 @@ const env = {
   databaseUrl: process.env.DATABASE_URL,
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "1d",
+  sessionIdleTimeoutMinutes: parsePositiveNumber(process.env.SESSION_IDLE_TIMEOUT_MINUTES, 30),
 };
 
 export function validateEnv(requiredKeys = []) {

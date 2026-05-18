@@ -11,6 +11,10 @@ export function signToken(payload) {
   });
 }
 
+export function decodeToken(token) {
+  return jwt.decode(token);
+}
+
 export function verifyToken(token) {
   if (!env.jwtSecret) {
     throw new Error("JWT_SECRET is required");

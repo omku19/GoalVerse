@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 import prisma from "../config/db.js";
-import { signToken } from "../utils/jwt.js";
+import { decodeToken, signToken } from "../utils/jwt.js";
 import { validateLoginInput } from "../utils/validators.js";
 
 function invalidCredentialsError() {
@@ -55,16 +56,38 @@ export async function loginUser(payload) {
   });
 
   const safeUser = sanitizeUser(user);
+  const jwtId = randomUUID();
   const token = signToken({
     sub: user.id,
     email: user.email,
     role: user.role,
+    jti: jwtId,
+  });
+  const decoded = decodeToken(token);
+
+  await prisma.authSession.create({
+    data: {
+      userId: user.id,
+      jwtId,
+      expiresAt: new Date(decoded.exp * 1000),
+    },
   });
 
   return {
     token,
     user: safeUser,
   };
+}
+
+export async function revokeCurrentSession(authSession) {
+  if (!authSession?.id || authSession.revokedAt) {
+    return null;
+  }
+
+  return prisma.authSession.update({
+    where: { id: authSession.id },
+    data: { revokedAt: new Date() },
+  });
 }
 
 export async function getCurrentUserProfile(authUser) {

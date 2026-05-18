@@ -1,4 +1,4 @@
-import { getCurrentUserProfile, loginUser } from "../services/authService.js";
+import { getCurrentUserProfile, loginUser, revokeCurrentSession } from "../services/authService.js";
 
 export async function login(req, res, next) {
   try {
@@ -19,7 +19,13 @@ export async function login(req, res, next) {
   }
 }
 
-export async function logout(_req, res) {
+export async function logout(req, res, next) {
+  try {
+    await revokeCurrentSession(req.authSession);
+  } catch (error) {
+    return next(error);
+  }
+
   res.status(200).json({
     message: "Logout successful",
   });

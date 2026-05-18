@@ -16,15 +16,24 @@ const unitOptions = [
 ];
 const unitLabels = Object.fromEntries(unitOptions.map((option) => [option.value, option.label]));
 
+const STAT_GRADIENTS = [
+  "from-indigo-500 to-violet-500",
+  "from-cyan-500 to-teal-500",
+  "from-amber-500 to-orange-500",
+  "from-emerald-500 to-green-500",
+];
+let statIndex = 0;
+
 function StatCard({ title, value, caption, icon: Icon }) {
+  const gradient = STAT_GRADIENTS[statIndex++ % STAT_GRADIENTS.length];
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="gv-card gv-stat-card rounded-xl border border-indigo-100/60 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-slate-500">{title}</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p>
+          <p className="mt-2 text-3xl font-bold text-slate-950">{value}</p>
         </div>
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-md bg-[#1E40FF] text-white">
+        <span className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${gradient} text-white shadow-md`}>
           <Icon size={20} />
         </span>
       </div>
@@ -35,7 +44,7 @@ function StatCard({ title, value, caption, icon: Icon }) {
 
 function Panel({ title, actions, children, id }) {
   return (
-    <section id={id} className="scroll-mt-24 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section id={id} className="gv-card gv-panel scroll-mt-24 rounded-xl border border-indigo-100/60 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
         {actions}
@@ -52,12 +61,12 @@ function EmptyState({ children }) {
 function Badge({ children, tone = "slate" }) {
   const tones = {
     green: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    blue: "bg-blue-50 text-blue-700 border-blue-200",
+    blue: "bg-indigo-50 text-indigo-700 border-indigo-200",
     yellow: "bg-amber-50 text-amber-700 border-amber-200",
     red: "bg-red-50 text-red-700 border-red-200",
     slate: "bg-slate-50 text-slate-700 border-slate-200",
   };
-  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${tones[tone]}`}>{children}</span>;
 }
 
 function Input({ label, ...props }) {
@@ -100,13 +109,13 @@ function Textarea({ label, ...props }) {
 
 function Button({ children, variant = "primary", ...props }) {
   const variants = {
-    primary: "bg-[#1E40FF] text-white hover:bg-blue-800",
+    primary: "bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500",
     secondary: "bg-slate-100 text-slate-800 hover:bg-slate-200",
-    success: "bg-emerald-600 text-white hover:bg-emerald-700",
-    danger: "bg-red-600 text-white hover:bg-red-700",
+    success: "bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-400 hover:to-teal-400",
+    danger: "bg-gradient-to-r from-red-500 to-rose-500 text-white hover:from-red-400 hover:to-rose-400",
   };
   return (
-    <button {...props} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant]}`}>
+    <button {...props} className={`gv-btn inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant]}`}>
       {children}
     </button>
   );
@@ -114,10 +123,11 @@ function Button({ children, variant = "primary", ...props }) {
 
 function ProgressBar({ value, target }) {
   const percent = Math.min(100, Math.round((Number(value || 0) / Math.max(Number(target || 1), 1)) * 100));
+  const barColor = percent >= 80 ? "from-emerald-400 to-green-500" : percent >= 40 ? "from-amber-400 to-orange-500" : "from-red-400 to-rose-500";
   return (
     <div className="grid gap-1">
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-[#7EF663]" style={{ width: `${percent}%` }} />
+        <div className={`gv-progress-fill h-full rounded-full bg-gradient-to-r ${barColor}`} style={{ width: `${percent}%` }} />
       </div>
       <span className="text-xs text-slate-500">{percent}%</span>
     </div>
@@ -136,14 +146,14 @@ function formatDateInput(value) {
 
 function Modal({ title, subtitle, children, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-8">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+    <div className="gv-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-8 backdrop-blur-sm">
+      <div className="gv-modal-content max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-indigo-100/60 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-indigo-100/60 px-6 py-5">
           <div>
-            <h3 className="text-xl font-semibold text-slate-950">{title}</h3>
+            <h3 className="text-xl font-bold text-slate-950">{title}</h3>
             {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
           </div>
-          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-950" aria-label="Close modal">
+          <button type="button" onClick={onClose} className="gv-btn inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-50 hover:text-red-500" aria-label="Close modal">
             <X size={18} />
           </button>
         </div>
@@ -183,7 +193,7 @@ function GoalsTable({ goals, onApprove, onReject, onProgress, onSubmitCheckin, c
         </thead>
         <tbody className="divide-y divide-slate-100">
           {goals.map((goal) => (
-            <tr key={goal.id} className="align-top">
+            <tr key={goal.id} className="gv-table-row align-top">
               <td className="px-3 py-4">
                 <p className="font-semibold text-slate-950">{goal.title}</p>
                 <p className="mt-1 max-w-md text-xs text-slate-500">{goal.description}</p>
@@ -275,15 +285,16 @@ export default function WorkspaceDashboard({ role }) {
   ], [stats]);
 
   if (loading && !data) {
-    return <div className="rounded-lg border border-slate-200 bg-white p-8 text-sm text-slate-500">Loading Goalverse workspace...</div>;
+    return <div className="gv-card rounded-xl border border-indigo-100/60 bg-white p-8 text-sm text-slate-500">Loading Goalverse workspace...</div>;
   }
 
+  statIndex = 0;
   return (
     <section className="grid gap-6">
       <div className="flex items-start justify-between gap-6">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-[#1E40FF]">Goalverse</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-950">{role === "HR_ADMIN" ? "HR Command Center" : role === "MANAGER" ? "Manager Team Workspace" : "My Goal Workspace"}</h1>
+          <p className="text-sm font-semibold uppercase tracking-wide bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Goalverse</p>
+          <h1 className="mt-2 text-3xl font-bold text-slate-950">{role === "HR_ADMIN" ? "HR Command Center" : role === "MANAGER" ? "Manager Team Workspace" : "My Goal Workspace"}</h1>
           <p className="mt-2 text-sm text-slate-600">Signed in as {user?.firstName} {user?.lastName}. Demo password for seeded users is Password@123.</p>
         </div>
         <Filters filters={filters} setFilters={setFilters} reload={load} />
@@ -346,18 +357,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
         </div>
       </Panel>
 
-      <Panel id="analytics" title="Goal Health">
-        <div className="h-72 min-w-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={chartData} dataKey="value" nameKey="name" outerRadius={90} label>
-                {chartData.map((entry, index) => <Cell key={entry.name} fill={["#1E40FF", "#f59e0b", "#7EF663", "#ef4444"][index]} />)}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </Panel>
+      {/* Duplicate "Goal Health" pie chart removed — "Goal Status Distribution" below covers this */}
 
       <Panel id="create-user" title="Create User" actions={<Badge tone="green">{users.length} active users</Badge>}>
         <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
@@ -396,7 +396,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
               <XAxis dataKey="name" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="completion" fill="#1E40FF" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="completion" fill="#6366f1" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -407,7 +407,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={statusDistribution} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} label>
-                {statusDistribution.map((entry, index) => <Cell key={entry.name} fill={["#1E40FF", "#94a3b8", "#7EF663", "#f59e0b"][index]} />)}
+                {statusDistribution.map((entry, index) => <Cell key={entry.name} fill={["#6366f1", "#94a3b8", "#10b981", "#f59e0b"][index]} />)}
               </Pie>
               <Tooltip />
             </PieChart>
@@ -423,7 +423,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
               <XAxis dataKey="name" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="goals" fill="#7EF663" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="goals" fill="#06b6d4" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -432,7 +432,7 @@ function HrWorkspace({ departments, users, goals, chartData, runAction }) {
       <Panel title="Department Stats">
         <div className="grid gap-3">
           {departments.map((department) => (
-            <div key={department.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-4 rounded-md border border-slate-200 px-4 py-3">
+            <div key={department.id} className="gv-list-item grid grid-cols-[1fr_auto_auto] items-center gap-4 rounded-lg border border-indigo-100/60 px-4 py-3">
               <div><p className="font-semibold text-slate-950">{department.name}</p><p className="text-xs text-slate-500">Managers and employees mapped by HR</p></div>
               <Badge tone="blue">{department.users?.filter((item) => item.role === "MANAGER").length || 0} managers</Badge>
               <Badge tone="green">{department.users?.filter((item) => item.role === "EMPLOYEE").length || 0} employees</Badge>
@@ -515,7 +515,7 @@ function ManagerWorkspace({ goals, checkins, runAction }) {
         {submitted.length ? (
           <div className="grid gap-3">
             {submitted.map((checkin) => (
-              <div key={checkin.id} className="grid grid-cols-[1fr_auto] items-center gap-4 rounded-md border border-slate-200 px-4 py-3">
+              <div key={checkin.id} className="gv-list-item grid grid-cols-[1fr_auto] items-center gap-4 rounded-lg border border-indigo-100/60 px-4 py-3">
                 <div>
                   <p className="font-semibold text-slate-950">{checkin.goal?.title}</p>
                   <p className="text-sm text-slate-500">{checkin.submittedBy?.firstName} {checkin.submittedBy?.lastName}: {checkin.progress}% progress. {checkin.wins}</p>
@@ -682,7 +682,7 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
         {checkins.length ? (
           <div className="grid gap-3">
             {checkins.map((checkin) => (
-              <div key={checkin.id} className="rounded-md border border-slate-200 px-4 py-3">
+              <div key={checkin.id} className="gv-list-item rounded-lg border border-indigo-100/60 px-4 py-3">
                 <p className="font-semibold text-slate-950">{checkin.goal?.title}</p>
                 <p className="mt-1 text-sm text-slate-500">{checkin.reviewerNotes || "Submitted. Manager feedback pending."}</p>
               </div>
@@ -698,7 +698,7 @@ function EmployeeWorkspace({ goals, checkins, filters, runAction }) {
               <XAxis dataKey="name" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="progress" fill="#1E40FF" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="progress" fill="#6366f1" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -7,9 +7,11 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "build": "prisma generate",
     "start": "node src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "prisma db seed"
   },

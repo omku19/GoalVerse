@@ -210,10 +210,13 @@ const userSchema = z.object({
 const goalSchema = z.object({
   title: z.string().trim().min(3).max(180),
   description: z.string().max(1000).optional().nullable(),
+  thrustArea: z.string().max(100).optional().nullable(),
   targetValue: z.coerce.number().min(0).optional(),
+  weightage: z.coerce.number().int().min(10).max(100).optional(),
   unit: z.enum(unitTypes),
   quarter: z.coerce.number().int().min(1).max(4),
   year: z.coerce.number().int().min(2024).max(2035),
+  cycleYear: z.coerce.number().int().min(2024).max(2035).optional(),
   dueDate: z.string().optional().nullable(),
 });
 const adminGoalUpdateSchema = goalSchema.partial().extend({
@@ -307,15 +310,6 @@ router.put("/departments/:id", authorizeRoles([roles.hr]), asyncHandler(async (r
   res.json({ data: department });
 }));
 
-router.get("/departments/:id/managers", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
-  const managers = await prisma.user.findMany({
-    where: { departmentId: req.params.id, role: roles.manager, isActive: true },
-    select: userSelect(),
-    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-  });
-  res.json({ data: managers });
-}));
-
 router.get("/departments/stats", authorizeRoles([roles.hr]), asyncHandler(async (_req, res) => {
   const departments = await prisma.department.findMany({
     include: { users: true, goals: true },
@@ -331,6 +325,15 @@ router.get("/departments/stats", authorizeRoles([roles.hr]), asyncHandler(async 
     delayed: department.goals.filter((goal) => goal.status === "AT_RISK").length,
   }));
   res.json({ data });
+}));
+
+router.get("/departments/:id/managers", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const managers = await prisma.user.findMany({
+    where: { departmentId: req.params.id, role: roles.manager, isActive: true },
+    select: userSelect(),
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+  });
+  res.json({ data: managers });
 }));
 
 router.get("/users", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
@@ -399,6 +402,9 @@ router.post("/goals", authorizeRoles([roles.employee]), asyncHandler(async (req,
       ownerId: user.id,
       createdById: user.id,
       departmentId: user.departmentId,
+      cycleYear: payload.cycleYear || payload.year,
+      thrustArea: payload.thrustArea || "Business Impact",
+      weightage: payload.weightage || 10,
       status: "DRAFT",
       approvalStatus: "PENDING",
       priority: "MEDIUM",
@@ -584,10 +590,13 @@ router.patch("/goals/:id/approve", authorizeRoles([roles.manager]), asyncHandler
     data: {
       title: goalData.title,
       description: goalData.description,
+      thrustArea: goalData.thrustArea || existing.thrustArea,
       targetValue: goalData.targetValue,
+      weightage: goalData.weightage || existing.weightage,
       unit: goalData.unit,
       quarter: goalData.quarter,
       year: goalData.year,
+      cycleYear: goalData.cycleYear || existing.cycleYear || goalData.year,
       approvalStatus: "APPROVED",
       status: "ACTIVE",
       priority: payload.priority,
@@ -755,9 +764,15 @@ router.get("/dashboard/employee", authorizeRoles([roles.employee]), asyncHandler
 
 router.get("/dashboard/manager", authorizeRoles([roles.manager]), asyncHandler(async (req, res) => {
   const reports = await prisma.user.findMany({ where: { managerId: req.user.id, isActive: true }, select: userSelect() });
-  const goals = await prisma.goal.findMany({ where: { ownerId: { in: reports.map((report) => report.id) }, ...parseQuarterYear(req.query) }, include: goalInclude(), orderBy: { updatedAt: "desc" } });
-  const checkins = await prisma.quarterlyCheckin.findMany({ where: { submittedById: { in: reports.map((report) => report.id) } }, include: { goal: true, submittedBy: { select: userSelect() } }, orderBy: { createdAt: "desc" } });
-  res.json({ data: buildDashboard(goals, { team: reports, checkins }) });
+  const reportIds = reports.map((report) => report.id);
+  const [filteredGoals, pendingGoals, checkins] = await Promise.all([
+    prisma.goal.findMany({ where: { ownerId: { in: reportIds }, ...parseQuarterYear(req.query) }, include: goalInclude(), orderBy: { updatedAt: "desc" } }),
+    prisma.goal.findMany({ where: { ownerId: { in: reportIds }, approvalStatus: "PENDING" }, include: goalInclude(), orderBy: { updatedAt: "desc" } }),
+    prisma.quarterlyCheckin.findMany({ where: { submittedById: { in: reportIds } }, include: { goal: true, submittedBy: { select: userSelect() } }, orderBy: { createdAt: "desc" } }),
+  ]);
+  const seenIds = new Set(filteredGoals.map((g) => g.id));
+  const allGoals = [...filteredGoals, ...pendingGoals.filter((g) => !seenIds.has(g.id))];
+  res.json({ data: buildDashboard(allGoals, { team: reports, checkins }) });
 }));
 
 router.get("/dashboard/hr", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
@@ -784,6 +799,281 @@ router.get("/analytics/department-comparison", authorizeRoles([roles.hr]), async
 router.get("/analytics/delayed-goals", authorizeRoles([roles.hr]), asyncHandler(async (_req, res) => {
   const departments = await prisma.department.findMany({ include: { goals: true } });
   res.json({ data: departments.map((department) => ({ name: department.name, delayed: department.goals.filter((goal) => goal.status === "AT_RISK").length })) });
+}));
+
+const checkinStatuses = ["not_started", "on_track", "delayed", "at_risk", "completed"];
+
+function getCycleYear(query) {
+  return Number(query.cycleYear || query.year || new Date().getFullYear());
+}
+
+function latestCheckinForQuarter(goal, quarter, cycleYear) {
+  return (goal.quarterlyCheckins || []).find(
+    (ci) => Number(ci.quarter) === quarter && Number(ci.year) === cycleYear,
+  );
+}
+
+async function isCheckinWindowOpen(cycleYear, quarter) {
+  const window = await prisma.checkinWindow.findFirst({
+    where: { cycleYear: Number(cycleYear), quarter: Number(quarter) },
+  });
+  return Boolean(window?.isOpen);
+}
+
+/* ─── Governance ──────────────────────────────────────────── */
+
+router.get("/governance/cycles", authorizeRoles([roles.hr]), asyncHandler(async (_req, res) => {
+  const cycles = await prisma.goalCycle.findMany({ orderBy: { year: "desc" } });
+  res.json({ data: cycles });
+}));
+
+router.patch("/governance/cycle", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const payload = z.object({ year: z.coerce.number().int().min(2024).max(2035), isGoalSettingOpen: z.boolean() }).parse(req.body);
+  const cycle = await prisma.goalCycle.upsert({
+    where: { year: payload.year },
+    update: { isGoalSettingOpen: payload.isGoalSettingOpen, ...(payload.isGoalSettingOpen ? { openedAt: new Date() } : { closedAt: new Date() }) },
+    create: { year: payload.year, isGoalSettingOpen: payload.isGoalSettingOpen, openedAt: payload.isGoalSettingOpen ? new Date() : null },
+  });
+  await writeLog({ actorId: req.user.id, action: `governance.cycle_${payload.isGoalSettingOpen ? "opened" : "closed"}`, entityType: "goal_cycle", entityId: cycle.id, summary: `${payload.year} goal cycle ${payload.isGoalSettingOpen ? "opened" : "closed"}` });
+  res.json({ data: cycle });
+}));
+
+router.get("/governance/checkin-windows", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const cycleYear = getCycleYear(req.query);
+  const windows = await prisma.checkinWindow.findMany({ where: { cycleYear }, orderBy: { quarter: "asc" } });
+  res.json({ data: windows });
+}));
+
+router.patch("/governance/checkin-window", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const payload = z.object({ cycleYear: z.coerce.number().int(), quarter: z.coerce.number().int().min(1).max(4), isOpen: z.boolean() }).parse(req.body);
+  const window = await prisma.checkinWindow.upsert({
+    where: { cycleYear_quarter: { cycleYear: payload.cycleYear, quarter: payload.quarter } },
+    update: { isOpen: payload.isOpen, ...(payload.isOpen ? { openedAt: new Date() } : { closedAt: new Date() }) },
+    create: { cycleYear: payload.cycleYear, quarter: payload.quarter, isOpen: payload.isOpen, openedAt: payload.isOpen ? new Date() : null },
+  });
+  await writeLog({ actorId: req.user.id, action: "governance.checkin_window_updated", entityType: "checkin_window", entityId: window.id, summary: `Q${payload.quarter} ${payload.cycleYear} check-in window ${payload.isOpen ? "opened" : "closed"}` });
+  res.json({ data: window });
+}));
+
+/* ─── Goal Sheets & Shared Goals ──────────────────────────── */
+
+router.post("/goal-sheets/submit", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
+  const payload = z.object({ cycleYear: z.coerce.number().int() }).parse(req.body);
+  const goals = await prisma.goal.findMany({ where: { ownerId: req.user.id, cycleYear: payload.cycleYear, approvalStatus: "PENDING" } });
+  if (!goals.length) throw badRequest("No pending goals to submit");
+  const totalWeight = goals.reduce((sum, g) => sum + Number(g.weightage || 0), 0);
+  if (totalWeight !== 100) throw badRequest(`Weightage must total 100% (currently ${totalWeight}%)`);
+  await prisma.goal.updateMany({ where: { id: { in: goals.map((g) => g.id) } }, data: { submittedAt: new Date() } });
+  const user = await getUser(req.user.id);
+  if (user.managerId) {
+    await notify({ recipientId: user.managerId, actorId: user.id, type: "goal_sheet_submitted", title: "Goal sheet submitted", message: `${user.firstName} submitted ${goals.length} goals for review` });
+  }
+  res.json({ data: { submitted: goals.length } });
+}));
+
+router.patch("/goal-sheets/:employeeId/approve", authorizeRoles([roles.manager]), asyncHandler(async (req, res) => {
+  const payload = z.object({
+    cycleYear: z.coerce.number().int(),
+    managerComment: z.string().optional(),
+    goals: z.array(z.object({ id: z.string().uuid(), targetValue: z.coerce.number().min(0).optional(), weightage: z.coerce.number().min(10).max(100).optional(), dueDate: z.string().optional() })),
+  }).parse(req.body);
+  const employee = await prisma.user.findUnique({ where: { id: req.params.employeeId } });
+  if (!employee || employee.managerId !== req.user.id) throw forbidden();
+  for (const goalUpdate of payload.goals) {
+    const data = { approvalStatus: "APPROVED", status: "ACTIVE", approvedById: req.user.id, approvedAt: new Date(), lockedAt: new Date(), managerComment: payload.managerComment || null };
+    if (goalUpdate.targetValue !== undefined) data.targetValue = Number(goalUpdate.targetValue);
+    if (goalUpdate.weightage !== undefined) data.weightage = Number(goalUpdate.weightage);
+    if (goalUpdate.dueDate) data.dueDate = new Date(goalUpdate.dueDate);
+    await prisma.goal.update({ where: { id: goalUpdate.id }, data });
+  }
+  await notify({ recipientId: employee.id, actorId: req.user.id, type: "goal_sheet_approved", title: "Goal sheet approved", message: `Your annual goals have been approved and locked` });
+  res.json({ data: { approved: payload.goals.length } });
+}));
+
+router.patch("/goal-sheets/:employeeId/return", authorizeRoles([roles.manager]), asyncHandler(async (req, res) => {
+  const payload = z.object({ cycleYear: z.coerce.number().int(), managerComment: z.string().trim().min(3) }).parse(req.body);
+  const employee = await prisma.user.findUnique({ where: { id: req.params.employeeId } });
+  if (!employee || employee.managerId !== req.user.id) throw forbidden();
+  await prisma.goal.updateMany({ where: { ownerId: employee.id, cycleYear: payload.cycleYear, approvalStatus: "PENDING" }, data: { approvalStatus: "REJECTED", status: "DRAFT", managerComment: payload.managerComment, submittedAt: null, returnedAt: new Date() } });
+  await notify({ recipientId: employee.id, actorId: req.user.id, type: "goal_sheet_returned", title: "Goal sheet returned", message: payload.managerComment });
+  res.json({ data: { returned: true } });
+}));
+
+router.post("/shared-goals", authorizeRoles([roles.hr, roles.manager]), asyncHandler(async (req, res) => {
+  const payload = z.object({
+    employeeIds: z.array(z.string().uuid()).min(1),
+    primaryOwnerId: z.string().uuid(),
+    thrustArea: z.string().optional(),
+    title: z.string().trim().min(3),
+    description: z.string().optional(),
+    targetValue: z.coerce.number().min(0).optional(),
+    weightage: z.coerce.number().min(10).max(100).optional(),
+    unit: z.enum(unitTypes),
+    cycleYear: z.coerce.number().int(),
+    dueDate: z.string().optional(),
+  }).parse(req.body);
+  const groupId = crypto.randomUUID();
+  const created = [];
+  for (const employeeId of payload.employeeIds) {
+    const employee = await prisma.user.findUnique({ where: { id: employeeId } });
+    if (!employee) continue;
+    const goal = await prisma.goal.create({
+      data: {
+        ownerId: employeeId,
+        createdById: req.user.id,
+        departmentId: employee.departmentId,
+        title: payload.title,
+        description: payload.description,
+        thrustArea: payload.thrustArea || "Business Impact",
+        targetValue: Number(payload.targetValue || 0),
+        weightage: Number(payload.weightage || 10),
+        unit: payload.unit,
+        cycleYear: payload.cycleYear,
+        quarter: Math.floor(new Date().getMonth() / 3) + 1,
+        year: payload.cycleYear,
+        dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
+        status: "DRAFT",
+        approvalStatus: "PENDING",
+        priority: "MEDIUM",
+        sharedGroupId: groupId,
+        sharedSourceGoalId: employeeId === payload.primaryOwnerId ? null : payload.primaryOwnerId,
+      },
+    });
+    created.push(goal);
+  }
+  res.status(201).json({ data: created });
+}));
+
+/* ─── Audit Trail ─────────────────────────────────────────── */
+
+router.get("/audit-trail", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const where = { action: { startsWith: "goal.audit." } };
+  if (req.query.goal_id) where.goalId = String(req.query.goal_id);
+  if (req.query.user_id) where.actorId = String(req.query.user_id);
+  const logs = await prisma.activityLog.findMany({
+    where,
+    include: { actor: { select: userSelect() }, goal: { include: goalInclude() } },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  res.json({ data: logs });
+}));
+
+/* ─── Advanced Analytics ──────────────────────────────────── */
+
+router.get("/analytics/qoq-achievement", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const cycleYear = getCycleYear(req.query);
+  const level = String(req.query.level || "department");
+  const selectedId = req.query.id ? String(req.query.id) : undefined;
+  const where = { cycleYear };
+  if (level === "individual" && selectedId) where.ownerId = selectedId;
+  if (level === "team" && selectedId) {
+    const reports = await prisma.user.findMany({ where: { managerId: selectedId, isActive: true }, select: { id: true } });
+    where.ownerId = { in: reports.map((r) => r.id) };
+  }
+  if (level === "department" && selectedId) where.departmentId = selectedId;
+  const goals = await prisma.goal.findMany({ where, include: goalInclude() });
+  const quarters = [1, 2, 3, 4].map((quarter) => {
+    const scores = goals.flatMap((goal) => {
+      const ci = latestCheckinForQuarter(goal, quarter, cycleYear);
+      return ci ? [calculateGoalScore({ ...goal, progress: ci.progress, status: ci.status === "completed" ? "COMPLETED" : goal.status }).percent] : [];
+    });
+    return { quarter: `Q${quarter}`, score: scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : 0 };
+  });
+  res.json({ data: quarters });
+}));
+
+router.get("/analytics/completion-heatmap", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const cycleYear = getCycleYear(req.query);
+  const departments = await prisma.department.findMany({
+    include: { users: { where: { role: roles.employee, isActive: true }, select: { id: true } } },
+    orderBy: { name: "asc" },
+  });
+  const checkins = await prisma.quarterlyCheckin.findMany({ where: { year: cycleYear }, select: { submittedById: true, reviewedById: true, quarter: true } });
+  const data = departments.map((dept) => ({
+    departmentId: dept.id,
+    department: dept.name,
+    quarters: [1, 2, 3, 4].map((q) => {
+      const empIds = dept.users.map((u) => u.id);
+      const submitted = new Set(checkins.filter((ci) => Number(ci.quarter) === q && empIds.includes(ci.submittedById)).map((ci) => ci.submittedById));
+      return { quarter: `Q${q}`, completionRate: empIds.length ? Math.round((submitted.size / empIds.length) * 100) : 0, submitted: submitted.size, required: empIds.length };
+    }),
+  }));
+  res.json({ data });
+}));
+
+router.get("/analytics/goal-distribution", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const cycleYear = getCycleYear(req.query);
+  const goals = await prisma.goal.findMany({ where: { cycleYear } });
+  const countBy = (items, getKey) => Object.values(items.reduce((acc, item) => {
+    const key = getKey(item) || "Unassigned";
+    acc[key] = acc[key] || { name: key, value: 0 };
+    acc[key].value += 1;
+    return acc;
+  }, {}));
+  res.json({
+    data: {
+      thrustArea: countBy(goals, (g) => g.thrustArea),
+      uomType: countBy(goals, (g) => g.unit),
+      status: countBy(goals, (g) => {
+        if (g.status === "COMPLETED") return "Completed";
+        if (Number(g.progress || 0) <= 0) return "Not Started";
+        return "On Track";
+      }),
+    },
+  });
+}));
+
+router.get("/analytics/manager-effectiveness", authorizeRoles([roles.hr]), asyncHandler(async (req, res) => {
+  const cycleYear = getCycleYear(req.query);
+  const managers = await prisma.user.findMany({
+    where: { role: roles.manager, isActive: true },
+    select: { ...userSelect(), directReports: { where: { role: roles.employee, isActive: true }, select: { id: true } } },
+  });
+  const checkins = await prisma.quarterlyCheckin.findMany({ where: { year: cycleYear, reviewedAt: { not: null } }, select: { reviewedById: true, submittedById: true, quarter: true } });
+  const data = managers.map((mgr) => {
+    const reportIds = mgr.directReports.map((r) => r.id);
+    const required = reportIds.length * 4;
+    const reviewed = new Set(checkins.filter((ci) => ci.reviewedById === mgr.id && reportIds.includes(ci.submittedById)).map((ci) => `${ci.submittedById}-${ci.quarter}`)).size;
+    return { managerId: mgr.id, manager: `${mgr.firstName} ${mgr.lastName}`, reviewed, required, completionRate: required ? Math.round((reviewed / required) * 100) : 0 };
+  }).sort((a, b) => b.completionRate - a.completionRate);
+  res.json({ data });
+}));
+
+/* ─── Checkins (extended) ─────────────────────────────────── */
+
+router.post("/checkins", authorizeRoles([roles.employee]), asyncHandler(async (req, res) => {
+  const payload = z.object({
+    goalId: z.string().uuid(),
+    quarter: z.coerce.number().int().min(1).max(4),
+    year: z.coerce.number().int().min(2024).max(2035),
+    progress: z.coerce.number().min(0),
+    status: z.enum(checkinStatuses),
+    wins: z.string().max(1000).optional(),
+    blockers: z.string().max(1000).optional(),
+    nextSteps: z.string().max(1000).optional(),
+  }).parse(req.body);
+  const goal = await prisma.goal.findUnique({ where: { id: payload.goalId }, include: { owner: true } });
+  if (!goal) throw notFound("Goal not found");
+  if (goal.ownerId !== req.user.id) throw forbidden();
+  if (!["ACTIVE", "AT_RISK", "PAUSED", "COMPLETED"].includes(goal.status)) throw badRequest("Only approved goals can be submitted");
+  if (!(await isCheckinWindowOpen(goal.cycleYear || payload.year, payload.quarter))) throw badRequest("This quarterly check-in window is closed");
+  if (String(goal.unit || "").toUpperCase() === "MIN" && payload.progress > goal.targetValue) throw badRequest("Progress cannot exceed target value for Min goals");
+  const checkin = await prisma.quarterlyCheckin.create({
+    data: { ...payload, submittedById: req.user.id, submittedAt: new Date(), submissionStatus: "submitted" },
+    include: { goal: true, submittedBy: { select: userSelect() }, reviewedBy: { select: userSelect() } },
+  });
+  const nextStatus = payload.status === "completed" ? "COMPLETED" : "ACTIVE";
+  const updatedGoal = await prisma.goal.update({ where: { id: goal.id }, data: { status: nextStatus, progress: Math.round(payload.progress) } });
+  if (goal.sharedGroupId && !goal.sharedSourceGoalId) {
+    await prisma.goal.updateMany({
+      where: { sharedGroupId: goal.sharedGroupId, id: { not: goal.id } },
+      data: { status: nextStatus, progress: Math.round(payload.progress) },
+    });
+  }
+  await writePostLockGoalAudit({ actorId: req.user.id, before: goal, after: updatedGoal, fields: ["progress", "status"], summary: "Employee submitted locked goal check-in" });
+  await notify({ recipientId: goal.owner.managerId, actorId: req.user.id, goalId: goal.id, type: "checkin_submitted", title: "Quarterly check-in submitted", message: `${goal.title} is ready for review` });
+  res.status(201).json({ data: checkin });
 }));
 
 function buildDashboard(goals, extras = {}) {

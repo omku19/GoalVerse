@@ -21,9 +21,24 @@ app.use(helmet());
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || env.frontendUrls.includes(origin)) {
-        return callback(null, true);
+      if (!origin) return callback(null, true);
+
+      let originHost = "";
+      try {
+        originHost = new URL(origin).hostname;
+      } catch (_error) {
+        return callback(new Error("Not allowed by CORS"));
       }
+
+      if (env.frontendUrls.includes(origin)) return callback(null, true);
+
+      const suffixAllowed = env.frontendOriginSuffixes.some((suffix) => {
+        const normalizedSuffix = suffix.startsWith(".") ? suffix : `.${suffix}`;
+        const bareSuffix = normalizedSuffix.slice(1);
+        return originHost === bareSuffix || originHost.endsWith(normalizedSuffix);
+      });
+
+      if (suffixAllowed) return callback(null, true);
 
       return callback(new Error("Not allowed by CORS"));
     },

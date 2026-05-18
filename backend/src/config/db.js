@@ -8,10 +8,16 @@ if (!env.databaseUrl) {
 
 const adapter = new PrismaPg({
   connectionString: env.databaseUrl,
+  pool: {
+    max: 5,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+  },
 });
 
 const prisma = new PrismaClient({
   adapter,
+  log: env.nodeEnv === "development" ? ["warn", "error"] : ["error"],
 });
 
 export default prisma;

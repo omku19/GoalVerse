@@ -30,9 +30,12 @@ async function main() {
   }
 
   await prisma.notification.deleteMany();
+  await prisma.authSession.deleteMany();
   await prisma.activityLog.deleteMany();
   await prisma.quarterlyCheckin.deleteMany();
   await prisma.goal.deleteMany();
+  await prisma.checkinWindow.deleteMany();
+  await prisma.goalCycle.deleteMany();
 
   const departmentNames = ["Revenue Operations", "Product Engineering", "Customer Success", "People Operations"];
   const departments = {};
@@ -85,20 +88,37 @@ async function main() {
     await upsertUser({ email: "employee6@goalverse.com", firstName: "Neil", lastName: "Dutta", role: Role.EMPLOYEE, departmentId: departments["Customer Success"].id, managerId: managers[2].id, jobTitle: "Implementation Specialist" }),
   ];
 
+  await prisma.goalCycle.create({
+    data: {
+      year: 2026,
+      isGoalSettingOpen: true,
+      openedAt: new Date("2026-05-01"),
+    },
+  });
+  await prisma.checkinWindow.createMany({
+    data: [1, 2, 3, 4].map((quarter) => ({
+      cycleYear: 2026,
+      quarter,
+      isOpen: quarter === 2,
+      openedAt: quarter === 2 ? new Date("2026-05-01") : null,
+    })),
+  });
+
   const goalTemplates = [
-    ["Close enterprise pipeline", "Move high-value opportunities through the quarter.", 120, "MIN", "HIGH", "ACTIVE", "APPROVED", 80],
-    ["Reduce onboarding cycle time", "Lower implementation turnaround time without losing quality.", 14, "MAX", "MEDIUM", "AT_RISK", "APPROVED", 18],
-    ["Launch self-serve insights", "Ship dashboard improvements before the release deadline.", 0, "TIMELINE", "HIGH", "ACTIVE", "APPROVED", 0],
-    ["Zero critical API incidents", "Keep critical production incidents at zero this quarter.", 0, "ZERO", "MEDIUM", "COMPLETED", "APPROVED", 0],
-    ["Refresh quarterly success plans", "Create measurable plans for top accounts.", 30, "MIN", "LOW", "DRAFT", "PENDING", 0],
-    ["Document implementation runbooks", "Publish reusable deployment and support guides.", 12, "MIN", "MEDIUM", "SUBMITTED", "APPROVED", 10],
+    // [title, desc, target, unit, priority, status, approval, progress, isSubmitted]
+    ["Close enterprise pipeline", "Move high-value opportunities through the quarter.", 120, "MIN", "HIGH", "ACTIVE", "APPROVED", 80, true],
+    ["Reduce onboarding cycle time", "Lower implementation turnaround time without losing quality.", 14, "MAX", "MEDIUM", "AT_RISK", "APPROVED", 18, true],
+    ["Launch self-serve insights", "Ship dashboard improvements before the release deadline.", 0, "TIMELINE", "HIGH", "ACTIVE", "APPROVED", 0, true],
+    ["Zero critical API incidents", "Keep critical production incidents at zero this quarter.", 0, "ZERO", "MEDIUM", "COMPLETED", "APPROVED", 0, true],
+    ["Refresh quarterly success plans", "Create measurable plans for top accounts.", 30, "MIN", "LOW", "DRAFT", "PENDING", 0, true],
+    ["Document implementation runbooks", "Publish reusable deployment and support guides.", 12, "MIN", "MEDIUM", "DRAFT", "PENDING", 0, false],
   ];
 
   for (let index = 0; index < employees.length; index += 1) {
     const employee = employees[index];
     const template = goalTemplates[index];
     const manager = managers.find((item) => item.id === employee.managerId);
-    const [title, description, targetValue, unit, priority, status, approvalStatus, progress] = template;
+    const [title, description, targetValue, unit, priority, status, approvalStatus, progress, isSubmitted] = template;
     const goal = await prisma.goal.create({
       data: {
         ownerId: employee.id,
@@ -106,17 +126,22 @@ async function main() {
         approvedById: approvalStatus === "APPROVED" ? manager?.id : null,
         departmentId: employee.departmentId,
         title,
+        thrustArea: ["Financial", "Process", "Innovation", "Compliance", "Customer", "People"][index],
         description,
         targetValue,
+        weightage: 100,
         unit,
+        cycleYear: 2026,
         priority,
         status,
         approvalStatus,
         progress,
         quarter: 2,
         year: 2026,
+        submittedAt: (approvalStatus === "APPROVED" || isSubmitted) ? new Date("2026-05-05") : null,
         dueDate: new Date("2026-06-30"),
         approvedAt: approvalStatus === "APPROVED" ? new Date("2026-04-05") : null,
+        lockedAt: approvalStatus === "APPROVED" ? new Date("2026-04-05") : null,
         managerComment: approvalStatus === "PENDING" ? null : "Clear scope and measurable outcome.",
         employeeNote: progress > 0 ? "Latest progress is updated for the weekly manager sync." : null,
       },

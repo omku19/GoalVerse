@@ -117,10 +117,15 @@ model Goal {
   approvedById   String?        @map("approved_by_id") @db.Uuid
   departmentId   String?        @map("department_id") @db.Uuid
   parentGoalId   String?        @map("parent_goal_id") @db.Uuid
+  sharedGroupId  String?        @map("shared_group_id") @db.Uuid
+  sharedSourceGoalId String?     @map("shared_source_goal_id") @db.Uuid
   title          String         @db.VarChar(180)
+  thrustArea     String         @default("Business Impact") @map("thrust_area") @db.VarChar(120)
   description    String?        @db.Text
   targetValue    Float          @default(0) @map("target_value")
+  weightage      Float          @default(10)
   unit           UnitType       @default(MIN)
+  cycleYear      Int?           @map("cycle_year")
   status         GoalStatus     @default(DRAFT)
   approvalStatus ApprovalStatus @default(PENDING) @map("approval_status")
   priority       Priority       @default(MEDIUM)
@@ -135,6 +140,8 @@ model Goal {
   dueDate        DateTime?      @map("due_date") @db.Date
   quarter        Int?
   year           Int?
+  submittedAt    DateTime?      @map("submitted_at") @db.Timestamptz(6)
+  returnedAt     DateTime?      @map("returned_at") @db.Timestamptz(6)
   approvedAt     DateTime?      @map("approved_at") @db.Timestamptz(6)
   archivedAt     DateTime?      @map("archived_at") @db.Timestamptz(6)
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -155,12 +162,46 @@ model Goal {
   @@index([approvedById])
   @@index([departmentId])
   @@index([parentGoalId])
+  @@index([sharedGroupId])
+  @@index([sharedSourceGoalId])
   @@index([status])
   @@index([approvalStatus])
   @@index([priority])
   @@index([dueDate])
+  @@index([cycleYear])
   @@index([year, quarter])
   @@map("goals")
+}
+
+model GoalCycle {
+  id                String    @id @default(uuid()) @db.Uuid
+  year              Int       @unique
+  isGoalSettingOpen Boolean   @default(false) @map("is_goal_setting_open")
+  openedAt          DateTime? @map("opened_at") @db.Timestamptz(6)
+  closedAt          DateTime? @map("closed_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([year])
+  @@index([isGoalSettingOpen])
+  @@map("goal_cycles")
+}
+
+model CheckinWindow {
+  id           String    @id @default(uuid()) @db.Uuid
+  cycleYear    Int       @map("cycle_year")
+  quarter      Int
+  isOpen       Boolean   @default(false) @map("is_open")
+  openedAt     DateTime? @map("opened_at") @db.Timestamptz(6)
+  closedAt     DateTime? @map("closed_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([cycleYear, quarter])
+  @@index([cycleYear])
+  @@index([quarter])
+  @@index([isOpen])
+  @@map("checkin_windows")
 }
 
 model AuthSession {

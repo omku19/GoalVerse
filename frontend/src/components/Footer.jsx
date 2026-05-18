@@ -36,7 +36,7 @@ function SocialIcon({ d, label }) {
   return (
     <a
       href="#"
-      className="gv-btn inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-indigo-200 transition hover:bg-white/20 hover:text-white"
+      className="gv-btn inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--gv-sidebar-link-hover)] text-[var(--gv-text-inverse)] opacity-80 transition hover:bg-[var(--gv-sidebar-link-active)] hover:opacity-100"
       aria-label={label}
     >
       <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
@@ -60,7 +60,7 @@ export default function Footer() {
   }
 
   return (
-    <footer className="gv-footer text-white">
+    <footer className="gv-footer text-[var(--gv-text-inverse)]">
       {/* Main footer content */}
       <div className="px-6 pt-12 pb-8 sm:px-10">
         <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
@@ -68,41 +68,41 @@ export default function Footer() {
           <div className="space-y-5">
             <div>
               <p className="text-xl font-bold tracking-tight">
-                <span className="bg-gradient-to-r from-cyan-300 to-indigo-300 bg-clip-text text-transparent">Goal</span>
+                <span className="bg-gradient-to-r from-[var(--gv-primary)] to-[var(--gv-primary-light)] bg-clip-text text-transparent">Goal</span>
                 <span>verse</span>
               </p>
-              <p className="mt-2 text-sm leading-relaxed text-indigo-200/70">
+              <p className="mt-2 text-sm leading-relaxed text-[var(--gv-text-inverse)] opacity-80">
                 Unified goal setting, tracking, and performance reviews for modern teams. Set OKRs, track progress, and drive alignment across your organization.
               </p>
             </div>
 
             {/* Newsletter */}
             <div>
-              <p className="text-sm font-semibold text-white">Stay updated</p>
-              <p className="mt-1 text-xs text-indigo-200/60">Get product updates and team insights delivered weekly.</p>
+              <p className="text-sm font-semibold text-[var(--gv-text-inverse)]">Stay updated</p>
+              <p className="mt-1 text-xs text-[var(--gv-text-inverse)] opacity-70">Get product updates and team insights delivered weekly.</p>
               <form onSubmit={handleSubscribe} className="mt-3 flex gap-2">
                 <input
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@company.com"
-                  className="h-9 flex-1 rounded-lg border border-white/15 bg-white/10 px-3 text-sm text-white placeholder-indigo-300/50 outline-none transition focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/20"
+                  className="h-9 flex-1 rounded-lg border border-[var(--gv-sidebar-border)] bg-[var(--gv-sidebar-link-hover)] px-3 text-sm text-[var(--gv-text-inverse)] placeholder:text-[var(--gv-text-inverse)] placeholder:opacity-60 outline-none transition focus:border-[var(--gv-primary-light)] focus:ring-2 focus:ring-[var(--gv-focus-ring)]"
                   required
                 />
                 <button
                   type="submit"
-                  className="gv-btn h-9 rounded-lg bg-gradient-to-r from-cyan-500 to-indigo-500 px-4 text-xs font-semibold text-white transition hover:from-cyan-400 hover:to-indigo-400"
+                  className="gv-btn h-9 rounded-lg bg-gradient-to-r from-[var(--gv-primary)] to-[var(--gv-primary-light)] px-4 text-xs font-semibold text-[var(--gv-text-on-primary)] transition"
                 >
                   Subscribe
                 </button>
               </form>
               {subscribed ? (
-                <p className="mt-2 text-xs text-emerald-300">✓ Thanks for subscribing!</p>
+                <p className="mt-2 text-xs text-[var(--gv-success-light)]">Thanks for subscribing!</p>
               ) : null}
             </div>
 
             {/* Contact info */}
-            <div className="space-y-2 text-xs text-indigo-200/60">
+            <div className="space-y-2 text-xs text-[var(--gv-text-inverse)] opacity-70">
               <p className="flex items-center gap-2"><Mail size={13} /> hello@goalverse.io</p>
               <p className="flex items-center gap-2"><Phone size={13} /> +1 (555) 123-4567</p>
               <p className="flex items-center gap-2"><MapPin size={13} /> San Francisco, CA</p>
@@ -112,13 +112,13 @@ export default function Footer() {
           {/* Link columns */}
           {Object.entries(footerLinks).map(([category, links]) => (
             <div key={category}>
-              <p className="text-sm font-semibold text-white">{category}</p>
+              <p className="text-sm font-semibold text-[var(--gv-text-inverse)]">{category}</p>
               <ul className="mt-4 space-y-2.5">
                 {links.map((link) => (
                   <li key={link.label}>
                     <a
                       href={link.href}
-                      className="text-sm text-indigo-200/60 transition hover:text-cyan-300"
+                      className="text-sm text-[var(--gv-text-inverse)] opacity-70 transition hover:text-[var(--gv-primary-light)] hover:opacity-100"
                     >
                       {link.label}
                     </a>
@@ -131,9 +131,9 @@ export default function Footer() {
       </div>
 
       {/* Bottom bar */}
-      <div className="border-t border-white/10 px-6 py-5 sm:px-10">
+      <div className="border-t border-[var(--gv-sidebar-border)] px-6 py-5 sm:px-10">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-xs text-indigo-200/50">
+          <p className="text-xs text-[var(--gv-text-inverse)] opacity-60">
             © {new Date().getFullYear()} Goalverse Inc. All rights reserved. · JWT secured · PostgreSQL backed
           </p>
           <div className="flex items-center gap-2">

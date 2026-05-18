@@ -7,14 +7,14 @@ export default function Sidebar({ user }) {
   const navigation = getNavigationForRole(role);
 
   return (
-    <aside className="hidden w-72 shrink-0 lg:block" style={{ background: 'linear-gradient(180deg, #1e1b4b 0%, #312e81 50%, #3730a3 100%)' }}>
+    <aside className="hidden w-72 shrink-0 bg-gradient-to-b from-[var(--gv-sidebar-from)] via-[var(--gv-sidebar-via)] to-[var(--gv-sidebar-to)] lg:block">
       <div className="flex h-full flex-col">
-        <div className="border-b border-white/10 px-6 py-5">
-          <p className="text-lg font-bold tracking-tight text-white">
-            <span className="bg-gradient-to-r from-cyan-300 to-indigo-300 bg-clip-text text-transparent">Goal</span>
-            <span className="text-white">verse</span>
+        <div className="border-b border-[var(--gv-sidebar-border)] px-6 py-5">
+          <p className="text-lg font-bold tracking-tight text-[var(--gv-text-inverse)]">
+            <span className="bg-gradient-to-r from-[var(--gv-primary)] to-[var(--gv-primary-light)] bg-clip-text text-transparent">Goal</span>
+            <span className="text-[var(--gv-text-inverse)]">verse</span>
           </p>
-          <p className="mt-1 text-sm text-indigo-200/70">{ROLE_LABELS[role] || "Workspace"}</p>
+          <p className="mt-1 text-sm text-[var(--gv-text-inverse)] opacity-80">{ROLE_LABELS[role] || "Workspace"}</p>
         </div>
 
         <nav className="grid gap-1 px-4 py-5">
@@ -29,8 +29,8 @@ export default function Sidebar({ user }) {
                   [
                     "gv-sidebar-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
                     isActive
-                      ? "gv-sidebar-link-active text-white"
-                      : "text-indigo-200/80 hover:text-white",
+                      ? "gv-sidebar-link-active text-[var(--gv-text-inverse)]"
+                      : "text-[var(--gv-text-inverse)] opacity-80 hover:opacity-100",
                   ].join(" ")
                 }
                 style={{ animationDelay: `${index * 60}ms` }}
@@ -43,8 +43,8 @@ export default function Sidebar({ user }) {
         </nav>
 
         {/* Bottom branding */}
-        <div className="mt-auto border-t border-white/10 px-6 py-4">
-          <p className="text-xs text-indigo-300/50">© {new Date().getFullYear()} Goalverse</p>
+        <div className="mt-auto border-t border-[var(--gv-sidebar-border)] px-6 py-4">
+          <p className="text-xs text-[var(--gv-text-inverse)] opacity-60">© {new Date().getFullYear()} Goalverse</p>
         </div>
       </div>
     </aside>

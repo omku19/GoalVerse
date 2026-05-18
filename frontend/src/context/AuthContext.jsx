@@ -4,9 +4,11 @@ import {
   fetchCurrentUser,
   getAuthToken,
   getAuthUser,
+  isAuthSessionIdleExpired,
   loginUser,
   logoutUser,
   saveAuthSession,
+  touchAuthSession,
 } from "../services/api.js";
 
 export const AuthContext = createContext(null);
@@ -66,6 +68,33 @@ export function AuthProvider({ children }) {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    function expireSession() {
+      clearAuthSession();
+      setToken(null);
+      setUser(null);
+    }
+
+    function handleUserActivity() {
+      touchAuthSession();
+    }
+
+    const activityEvents = ["click", "keydown", "mousemove", "touchstart"];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, handleUserActivity, { passive: true }));
+    window.addEventListener("goalverse:auth-expired", expireSession);
+    const intervalId = window.setInterval(() => {
+      if (isAuthSessionIdleExpired()) {
+        expireSession();
+      }
+    }, 30_000);
+
+    return () => {
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, handleUserActivity));
+      window.removeEventListener("goalverse:auth-expired", expireSession);
+      window.clearInterval(intervalId);
     };
   }, []);
 

@@ -14,9 +14,10 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
       <Route element={<ProtectedRoute />}>
+        <Route path="/unauthorized" element={<UnauthorizedPage />} />
+
         <Route element={<AppLayout />}>
           <Route index element={<RoleRedirect />} />
           <Route path="/dashboard" element={<RoleRedirect />} />
@@ -35,7 +36,9 @@ export default function AppRoutes() {
         </Route>
       </Route>
 
-      <Route path="/404" element={<NotFoundPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/404" element={<NotFoundPage />} />
+      </Route>
       <Route path="*" element={<Navigate to="/404" replace />} />
     </Routes>
   );

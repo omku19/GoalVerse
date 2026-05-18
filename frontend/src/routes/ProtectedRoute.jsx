@@ -8,7 +8,7 @@ export default function ProtectedRoute({ allowedRoles = [] }) {
 
   if (isInitializing) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm font-medium text-slate-600">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--gv-bg)] text-sm font-medium text-[var(--gv-text-secondary)]">
         Loading workspace...
       </div>
     );
